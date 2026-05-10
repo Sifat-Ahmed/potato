@@ -5,7 +5,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="${codiconsUri}" rel="stylesheet">
-  <title>Private Orchestrator</title>
+  <title>Potato</title>
   <style>
     :root {
       color-scheme: dark;
@@ -161,7 +161,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
     <header class="topbar">
       <div class="brand">
         <div>
-          <div class="brand-title">Private Orchestrator</div>
+          <div class="brand-title">Potato</div>
           <div class="meta" id="summary">Loading</div>
         </div>
         <div class="row">

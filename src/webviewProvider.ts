@@ -41,7 +41,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
       void this.handleMessage(message as WebviewToExtensionMessage);
     });
     void this.refresh();
-    this.output.appendLine('Orchestrator webview resolved.');
+    this.output.appendLine('Potato webview resolved.');
   }
 
   async reveal(): Promise<void> {

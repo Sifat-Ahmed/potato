@@ -1,6 +1,6 @@
 {
-  "name": "private-orchestrator",
-  "displayName": "Private Orchestrator",
+  "name": "potato",
+  "displayName": "Potato",
   "description": "Personal VS Code orchestrator for private OpenAI-compatible AI endpoints.",
   "version": "0.0.1",
   "publisher": "local",
@@ -25,18 +25,18 @@
     "commands": [
       {
         "command": "orchestrator.open",
-        "title": "Orchestrator: Open"
+        "title": "Potato: Open"
       },
       {
         "command": "orchestrator.resetDemoData",
-        "title": "Orchestrator: Reset Starter Agents"
+        "title": "Potato: Reset Starter Agents"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "orchestrator",
-          "title": "Orchestrator",
+          "title": "Potato",
           "icon": "resources/orchestrator.svg"
         }
       ]
@@ -51,7 +51,7 @@
       ]
     },
     "configuration": {
-      "title": "Private Orchestrator",
+      "title": "Potato",
       "properties": {
         "orchestrator.autoDelegate": {
           "type": "boolean",
@@ -73,7 +73,7 @@
     "watch": "tsc -watch -p ./",
     "lint": "tsc --noEmit -p ./",
     "test": "npm run compile && node --test test/orchestrator-protocol.test.js",
-    "package:vsix": "vsce package --out private-orchestrator.vsix"
+    "package:vsix": "vsce package --out potato.vsix"
   },
   "dependencies": {
     "@vscode/codicons": "^0.0.36"

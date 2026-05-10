@@ -21,7 +21,7 @@ export function runApprovedTerminalCommand(action: PendingAction): string {
   }
 
   const terminal = vscode.window.createTerminal({
-    name: 'Orchestrator Action',
+    name: 'Potato Action',
     cwd: command.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
   });
   terminal.show();

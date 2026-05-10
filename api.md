@@ -1,4 +1,4 @@
-# Private Orchestrator Contracts
+# Potato Contracts
 
 ## Endpoint Types
 
