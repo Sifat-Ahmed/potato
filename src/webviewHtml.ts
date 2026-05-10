@@ -65,16 +65,51 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
       outline: 1px solid var(--focus);
       outline-offset: 0;
     }
-    .shell { min-height: 100vh; display: flex; flex-direction: column; }
-    .topbar { padding: 14px 14px 10px; border-bottom: 1px solid var(--border); }
-    .brand { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+    .shell { height: 100vh; min-height: 0; display: flex; flex-direction: column; }
+    .topbar { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    .brand { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .brand-title { font-weight: 650; letter-spacing: 0; }
-    .tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-    .tab { min-width: 0; color: var(--muted); padding-left: 4px; padding-right: 4px; }
-    .tab.active { background: var(--panel); color: var(--text); }
-    .content { flex: 1; overflow: auto; padding: 14px; }
+    .toolbar { position: relative; flex: 0 0 auto; }
+    .toolbar button.active { background: var(--panel); color: var(--text); }
+    .menu-popover {
+      position: absolute;
+      top: 36px;
+      right: 0;
+      z-index: 20;
+      width: min(220px, calc(100vw - 24px));
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px;
+      background: var(--panel);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+    }
+    .menu-popover[hidden] { display: none; }
+    .menu-item {
+      width: 100%;
+      border-color: transparent;
+      justify-content: flex-start;
+      min-height: 32px;
+      padding: 6px 8px;
+    }
+    .menu-item.active { background: color-mix(in srgb, var(--panel) 70%, var(--text) 12%); color: var(--text); }
+    .menu-item .codicon { width: 16px; }
+    .menu-separator { height: 1px; background: var(--border); margin: 6px; }
+    .count {
+      margin-left: auto;
+      min-width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .content { flex: 1; min-height: 0; overflow: auto; padding: 14px; }
     .section { display: none; }
     .section.active { display: grid; gap: 12px; }
+    #chat.section.active { min-height: 100%; display: flex; flex-direction: column; }
     .stack { display: grid; gap: 10px; }
     .row { display: flex; align-items: center; gap: 8px; }
     .row > * { min-width: 0; }
@@ -106,13 +141,18 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
       grid-template-columns: 1fr auto auto;
       gap: 8px;
       align-items: end;
-      position: sticky;
+      position: fixed;
+      left: 0;
+      right: 0;
       bottom: 0;
       background: var(--bg);
-      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      padding: 10px 12px 12px;
+      z-index: 10;
     }
-    .composer textarea { min-height: 74px; }
-    .transcript, .history, .actions { display: grid; gap: 10px; min-height: 120px; }
+    .composer textarea { min-height: 56px; max-height: 160px; }
+    .transcript, .history, .actions { display: grid; gap: 10px; min-height: 120px; align-content: start; }
+    .transcript { flex: 1; padding-bottom: 104px; }
     .message {
       border-left: 2px solid var(--border);
       padding: 2px 0 2px 10px;
@@ -139,7 +179,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
       position: fixed;
       left: 12px;
       right: 12px;
-      bottom: 12px;
+      bottom: 92px;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 9px 10px;
@@ -150,9 +190,9 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
     }
     .notice.show { display: block; }
     @media (max-width: 420px) {
-      .grid-2, .tabs { grid-template-columns: 1fr; }
-      .composer { grid-template-columns: 1fr; }
-      button.icon { width: auto; }
+      .grid-2 { grid-template-columns: 1fr; }
+      .brand { align-items: flex-start; }
+      .composer { grid-template-columns: 1fr 30px 30px; }
     }
   </style>
 </head>
@@ -164,19 +204,21 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
           <div class="brand-title">Potato</div>
           <div class="meta" id="summary">Loading</div>
         </div>
-        <div class="row">
-          <button class="icon" id="importConfig" title="Import config" aria-label="Import config"><span class="codicon codicon-cloud-download"></span></button>
-          <button class="icon" id="exportConfig" title="Export config" aria-label="Export config"><span class="codicon codicon-cloud-upload"></span></button>
-          <button class="icon" id="refresh" title="Refresh" aria-label="Refresh"><span class="codicon codicon-refresh"></span></button>
+        <div class="row toolbar">
+          <button class="icon" id="historyButton" title="History" aria-label="History"><span class="codicon codicon-history"></span></button>
+          <button class="icon" id="menuButton" title="Settings and sections" aria-label="Settings and sections" aria-expanded="false"><span class="codicon codicon-settings-gear"></span></button>
+          <div class="menu-popover" id="settingsMenu" hidden>
+            <button class="menu-item active" data-tab="chat"><span class="codicon codicon-comment-discussion"></span>Chat</button>
+            <button class="menu-item" data-tab="agents"><span class="codicon codicon-organization"></span>Agents</button>
+            <button class="menu-item" data-tab="endpoints"><span class="codicon codicon-plug"></span>Endpoints</button>
+            <button class="menu-item" data-tab="actions"><span class="codicon codicon-checklist"></span>Actions<span class="count" id="actionCount">0</span></button>
+            <div class="menu-separator"></div>
+            <button class="menu-item" id="importConfig"><span class="codicon codicon-cloud-download"></span>Import config</button>
+            <button class="menu-item" id="exportConfig"><span class="codicon codicon-cloud-upload"></span>Export config</button>
+            <button class="menu-item" id="refresh"><span class="codicon codicon-refresh"></span>Refresh</button>
+          </div>
         </div>
       </div>
-      <nav class="tabs" aria-label="Sections">
-        <button class="tab active" data-tab="chat">Chat</button>
-        <button class="tab" data-tab="agents">Agents</button>
-        <button class="tab" data-tab="endpoints">Endpoints</button>
-        <button class="tab" data-tab="actions">Actions</button>
-        <button class="tab" data-tab="history">History</button>
-      </nav>
     </header>
 
     <main class="content">
@@ -275,7 +317,26 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
       if (message.type === 'notice') showNotice(message.message, message.level);
     });
 
-    document.querySelectorAll('.tab').forEach(button => button.addEventListener('click', () => setTab(button.dataset.tab)));
+    document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => {
+      setTab(button.dataset.tab);
+      closeMenu();
+    }));
+    $('historyButton').addEventListener('click', () => {
+      setTab('history');
+      closeMenu();
+    });
+    $('menuButton').addEventListener('click', event => {
+      event.stopPropagation();
+      toggleMenu();
+    });
+    document.addEventListener('click', event => {
+      if (!$('settingsMenu').hidden && !event.target.closest('#settingsMenu') && !event.target.closest('#menuButton')) {
+        closeMenu();
+      }
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closeMenu();
+    });
     $('refresh').addEventListener('click', () => vscode.postMessage({ type: 'ready' }));
     $('importConfig').addEventListener('click', () => vscode.postMessage({ type: 'importConfig' }));
     $('exportConfig').addEventListener('click', () => vscode.postMessage({ type: 'exportConfig' }));
@@ -353,12 +414,27 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
 
     function setTab(tab) {
       state.activeTab = tab;
-      document.querySelectorAll('.tab').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
+      document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
+      $('historyButton').classList.toggle('active', tab === 'history');
+      $('menuButton').classList.toggle('active', ['agents', 'endpoints', 'actions'].includes(tab));
       document.querySelectorAll('.section').forEach(section => section.classList.toggle('active', section.id === tab));
+    }
+
+    function toggleMenu() {
+      const menu = $('settingsMenu');
+      const nextOpen = menu.hidden;
+      menu.hidden = !nextOpen;
+      $('menuButton').setAttribute('aria-expanded', String(nextOpen));
+    }
+
+    function closeMenu() {
+      $('settingsMenu').hidden = true;
+      $('menuButton').setAttribute('aria-expanded', 'false');
     }
 
     function renderAll() {
       $('summary').textContent = state.endpoints.length + ' endpoint' + (state.endpoints.length === 1 ? '' : 's') + ', ' + state.agents.length + ' agent' + (state.agents.length === 1 ? '' : 's') + ', ' + pendingCount() + ' pending';
+      $('actionCount').textContent = String(pendingCount());
       renderEndpointOptions();
       renderAgents();
       renderEndpoints();
