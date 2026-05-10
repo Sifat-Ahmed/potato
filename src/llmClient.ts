@@ -6,6 +6,9 @@ interface ChatCompletionsResponse {
     message?: {
       content?: string | Array<{ type?: string; text?: string }>;
     };
+    delta?: {
+      content?: string;
+    };
     text?: string;
   }>;
 }
@@ -28,6 +31,11 @@ export class LlmClient {
     const headers = this.buildHeaders(endpoint, apiKey);
     const url = this.buildUrl(endpoint);
     const body = this.createBody(endpoint, request);
+    const shouldStream = Boolean(endpoint.streaming || request.stream);
+
+    if (shouldStream) {
+      return this.callAgentStreaming(endpoint, request, url, headers, body);
+    }
 
     const response = await fetch(url, {
       method: 'POST',
@@ -53,10 +61,97 @@ export class LlmClient {
     return {
       agentId: request.agent.id,
       agentName: request.agent.name,
-      text: endpoint.apiKind === 'responses'
-        ? this.extractResponsesText(parsed)
-        : this.extractChatCompletionsText(parsed),
+      text: this.extractText(endpoint, parsed),
       raw: parsed
+    };
+  }
+
+  async testEndpoint(endpoint: EndpointConfig, model: string, abortSignal?: AbortSignal): Promise<AgentCallResult> {
+    return this.callAgent(endpoint, {
+      agent: {
+        id: 'endpoint-test',
+        name: 'Endpoint Test',
+        role: 'custom',
+        endpointId: endpoint.id,
+        model,
+        systemPrompt: 'Reply with the single word OK.',
+        temperature: 0,
+        enabled: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      },
+      input: 'Reply with OK if this endpoint is reachable.',
+      abortSignal
+    });
+  }
+
+  private async callAgentStreaming(
+    endpoint: EndpointConfig,
+    request: AgentCallRequest,
+    url: string,
+    headers: HeadersInit,
+    body: unknown
+  ): Promise<AgentCallResult> {
+    const streamedBody = { ...(body as Record<string, unknown>), stream: true };
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(streamedBody),
+      signal: request.abortSignal
+    });
+
+    if (!response.ok || !response.body) {
+      const responseText = await response.text();
+      throw new Error(`Endpoint ${endpoint.name} returned ${response.status}: ${responseText}`);
+    }
+
+    const decoder = new TextDecoder();
+    const reader = response.body.getReader();
+    let buffer = '';
+    let fullText = '';
+    const rawChunks: unknown[] = [];
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(':')) {
+          continue;
+        }
+
+        const payload = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed;
+        if (payload === '[DONE]') {
+          continue;
+        }
+
+        try {
+          const parsed = JSON.parse(payload);
+          rawChunks.push(parsed);
+          const token = this.extractStreamToken(parsed);
+          if (token) {
+            fullText += token;
+            request.onToken?.(token);
+          }
+        } catch {
+          fullText += payload;
+          request.onToken?.(payload);
+        }
+      }
+    }
+
+    return {
+      agentId: request.agent.id,
+      agentName: request.agent.name,
+      text: fullText.trim(),
+      raw: rawChunks
     };
   }
 
@@ -156,6 +251,14 @@ export class LlmClient {
     };
   }
 
+  private extractText(endpoint: EndpointConfig, raw: unknown): string {
+    if (endpoint.apiKind === 'responses') {
+      return this.extractResponsesText(raw);
+    }
+
+    return this.extractChatCompletionsText(raw);
+  }
+
   private createMessages(request: AgentCallRequest): ChatMessage[] {
     if (request.messages?.length) {
       return request.messages;
@@ -198,5 +301,25 @@ export class LlmClient {
       .trim();
 
     return text ?? '';
+  }
+
+  private extractStreamToken(raw: unknown): string {
+    const parsed = raw as {
+      type?: string;
+      delta?: string;
+      output_text?: string;
+      choices?: Array<{ delta?: { content?: string }; text?: string }>;
+    };
+
+    if (typeof parsed.delta === 'string') {
+      return parsed.delta;
+    }
+
+    if (typeof parsed.output_text === 'string') {
+      return parsed.output_text;
+    }
+
+    const choice = parsed.choices?.[0];
+    return choice?.delta?.content ?? choice?.text ?? '';
   }
 }

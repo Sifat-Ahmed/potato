@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
+import { extractPendingActions, extractToolCalls } from './actionParser';
 import { LlmClient } from './llmClient';
-import { AgentConfig, DelegationTask, EndpointConfig, OrchestratorRunUpdate } from './types';
+import { ToolRunner } from './toolRunner';
+import { AgentCallResult, AgentConfig, DelegationTask, EndpointConfig, OrchestratorRunUpdate, PendingAction } from './types';
 import { asErrorMessage, parseJsonObject } from './utils';
 
 interface DelegationPlan {
@@ -10,10 +12,12 @@ interface DelegationPlan {
 export class OrchestratorRuntime {
   constructor(
     private readonly llmClient: LlmClient,
-    private readonly emit: (update: OrchestratorRunUpdate) => void
+    private readonly emit: (update: OrchestratorRunUpdate) => void,
+    private readonly toolRunner: ToolRunner,
+    private readonly recordActions: (actions: PendingAction[]) => Promise<void>
   ) {}
 
-  async run(taskText: string, endpoints: EndpointConfig[], agents: AgentConfig[]): Promise<void> {
+  async run(taskText: string, endpoints: EndpointConfig[], agents: AgentConfig[], abortSignal?: AbortSignal): Promise<void> {
     const enabledAgents = agents.filter(agent => agent.enabled);
     const manager = enabledAgents.find(agent => agent.role === 'manager') ?? enabledAgents[0];
 
@@ -39,15 +43,12 @@ export class OrchestratorRuntime {
 
       const autoDelegate = vscode.workspace.getConfiguration('orchestrator').get<boolean>('autoDelegate', true);
       const delegationTasks = autoDelegate
-        ? await this.createDelegationPlan(taskText, manager, managerEndpoint, enabledAgents)
+        ? await this.createDelegationPlan(taskText, manager, managerEndpoint, enabledAgents, abortSignal)
         : [];
 
       if (delegationTasks.length === 0) {
         this.emit({ kind: 'status', message: `${manager.name} is answering directly.` });
-        const result = await this.llmClient.callAgent(managerEndpoint, {
-          agent: manager,
-          input: taskText
-        });
+        const result = await this.callAgentWithTools(managerEndpoint, manager, taskText, abortSignal);
         this.emit({ kind: 'final', message: result.text, result });
         return;
       }
@@ -57,11 +58,15 @@ export class OrchestratorRuntime {
         message: delegationTasks.map((task, index) => `${index + 1}. ${task.title}`).join('\n')
       });
 
-      const agentResults = await this.runDelegatedTasks(delegationTasks, enabledAgents, endpointMap, taskText);
-      const synthesis = await this.synthesize(taskText, manager, managerEndpoint, delegationTasks, agentResults);
+      const agentResults = await this.runDelegatedTasks(delegationTasks, enabledAgents, endpointMap, taskText, abortSignal);
+      const synthesis = await this.synthesize(taskText, manager, managerEndpoint, delegationTasks, agentResults, abortSignal);
 
       this.emit({ kind: 'final', message: synthesis.text, result: synthesis });
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        this.emit({ kind: 'cancelled', message: 'Run cancelled.' });
+        return;
+      }
       this.emit({ kind: 'error', message: asErrorMessage(error) });
     }
   }
@@ -70,7 +75,8 @@ export class OrchestratorRuntime {
     taskText: string,
     manager: AgentConfig,
     endpoint: EndpointConfig,
-    agents: AgentConfig[]
+    agents: AgentConfig[],
+    abortSignal?: AbortSignal
   ): Promise<DelegationTask[]> {
     const availableAgents = agents
       .filter(agent => agent.id !== manager.id && agent.endpointId && agent.model)
@@ -96,7 +102,8 @@ export class OrchestratorRuntime {
         `Available agents:\n${JSON.stringify(availableAgents, null, 2)}`,
         '',
         `User task:\n${taskText}`
-      ].join('\n')
+      ].join('\n'),
+      abortSignal
     });
 
     const plan = parseJsonObject<DelegationPlan>(result.text);
@@ -116,7 +123,8 @@ export class OrchestratorRuntime {
     tasks: DelegationTask[],
     agents: AgentConfig[],
     endpointMap: Map<string, EndpointConfig>,
-    originalTask: string
+    originalTask: string,
+    abortSignal?: AbortSignal
   ) {
     const agentMap = new Map(agents.map(agent => [agent.id, agent]));
     const calls = tasks.map(async task => {
@@ -128,14 +136,11 @@ export class OrchestratorRuntime {
       }
 
       this.emit({ kind: 'status', message: `${agent.name} is working on ${task.title}.`, task });
-      const result = await this.llmClient.callAgent(endpoint, {
-        agent,
-        input: [
+      const result = await this.callAgentWithTools(endpoint, agent, [
           `Original user task:\n${originalTask}`,
           '',
           `Assigned task:\n${task.instructions}`
-        ].join('\n')
-      });
+        ].join('\n'), abortSignal);
       this.emit({ kind: 'agent-result', message: result.text, task, result });
       return result;
     });
@@ -148,11 +153,10 @@ export class OrchestratorRuntime {
     manager: AgentConfig,
     endpoint: EndpointConfig,
     tasks: DelegationTask[],
-    results: Awaited<ReturnType<OrchestratorRuntime['runDelegatedTasks']>>
+    results: Awaited<ReturnType<OrchestratorRuntime['runDelegatedTasks']>>,
+    abortSignal?: AbortSignal
   ) {
-    return this.llmClient.callAgent(endpoint, {
-      agent: manager,
-      input: [
+    return this.callAgentWithTools(endpoint, manager, [
         'Synthesize the final response for the user.',
         'Be direct, preserve important caveats, and call out any task that failed or lacks evidence.',
         '',
@@ -164,7 +168,68 @@ export class OrchestratorRuntime {
           agentName: result.agentName,
           text: result.text
         })), null, 2)}`
-      ].join('\n')
-    });
+      ].join('\n'), abortSignal);
   }
+
+  private async callAgentWithTools(
+    endpoint: EndpointConfig,
+    agent: AgentConfig,
+    input: string,
+    abortSignal?: AbortSignal
+  ): Promise<AgentCallResult> {
+    const firstResult = await this.llmClient.callAgent(endpoint, {
+      agent,
+      input: `${input}\n\n${toolProtocolInstructions()}`,
+      abortSignal,
+      onToken: token => this.emit({ kind: 'token', message: token })
+    });
+
+    const toolCalls = extractToolCalls(firstResult.text);
+    let result = firstResult;
+
+    if (toolCalls.length > 0) {
+      this.emit({ kind: 'status', message: `${agent.name} requested ${toolCalls.length} local tool call(s).` });
+      const toolResults = await Promise.all(toolCalls.map(call => this.toolRunner.run(call)));
+      this.emit({
+        kind: 'tool-result',
+        message: toolResults.map(item => `${item.name}: ${item.ok ? 'ok' : 'failed'}\n${item.content}`).join('\n\n')
+      });
+
+      result = await this.llmClient.callAgent(endpoint, {
+        agent,
+        input: [
+          input,
+          '',
+          'Local tool results:',
+          JSON.stringify(toolResults, null, 2),
+          '',
+          'Now produce the final response. If file edits or terminal commands are needed, return the approved action proposal JSON schema from the tool instructions.'
+        ].join('\n'),
+        abortSignal,
+        onToken: token => this.emit({ kind: 'token', message: token })
+      });
+    }
+
+    const actions = extractPendingActions(result.text, agent);
+    if (actions.length > 0) {
+      await this.recordActions(actions);
+      this.emit({
+        kind: 'action-proposal',
+        message: `${agent.name} proposed ${actions.length} action(s) for approval.`,
+        actions
+      });
+    }
+
+    return result;
+  }
+}
+
+function toolProtocolInstructions(): string {
+  return [
+    'Local tools are available through a provider-neutral JSON protocol.',
+    'To use tools, reply only with valid JSON: {"toolCalls":[{"name":"web_search","arguments":{"query":"text"}},{"name":"list_files","arguments":{"glob":"src/**/*.ts"}},{"name":"read_file","arguments":{"path":"src/file.ts"}},{"name":"search_workspace","arguments":{"query":"text"}}]}',
+    'Do not pretend a tool ran. Request a tool call first, then wait for tool results.',
+    'To propose workspace changes, reply with valid JSON: {"fileEdits":[{"path":"relative/path","content":"full file content","description":"why"}],"terminalCommands":[{"command":"npm test","cwd":"optional/path","description":"why"}]}',
+    'File edits and terminal commands require user approval before execution.'
+  ].join('\n');
 }
