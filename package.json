@@ -1,10 +1,15 @@
 {
-  "name": "private-orchestrator",
-  "displayName": "Private Orchestrator",
+  "name": "potato",
+  "displayName": "Potato",
   "description": "Personal VS Code orchestrator for private OpenAI-compatible AI endpoints.",
   "version": "0.0.1",
   "publisher": "local",
   "private": true,
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sifat-Ahmed/potato.git"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -20,18 +25,18 @@
     "commands": [
       {
         "command": "orchestrator.open",
-        "title": "Orchestrator: Open"
+        "title": "Potato: Open"
       },
       {
         "command": "orchestrator.resetDemoData",
-        "title": "Orchestrator: Reset Starter Agents"
+        "title": "Potato: Reset Starter Agents"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "orchestrator",
-          "title": "Orchestrator",
+          "title": "Potato",
           "icon": "resources/orchestrator.svg"
         }
       ]
@@ -46,7 +51,7 @@
       ]
     },
     "configuration": {
-      "title": "Private Orchestrator",
+      "title": "Potato",
       "properties": {
         "orchestrator.autoDelegate": {
           "type": "boolean",
@@ -66,14 +71,20 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "tsc --noEmit -p ./"
+    "lint": "tsc --noEmit -p ./",
+    "test": "npm run compile && node --test test/orchestrator-protocol.test.js",
+    "package:vsix": "vsce package --out potato.vsix"
   },
   "dependencies": {
     "@vscode/codicons": "^0.0.36"
   },
+  "overrides": {
+    "cheerio": "1.0.0-rc.12"
+  },
   "devDependencies": {
     "@types/node": "^20.11.30",
     "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^2.19.0",
     "typescript": "^5.4.5"
   }
 }

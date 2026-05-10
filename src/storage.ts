@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { AgentConfig, EndpointConfig, PersistedState, PublicState } from './types';
+import { AgentConfig, EndpointConfig, PendingAction, PersistedState, PublicState, RunHistoryEntry } from './types';
 import { createStarterAgents } from './starterData';
 
 const STATE_KEY = 'orchestrator.state.v1';
@@ -13,13 +13,17 @@ export class OrchestratorStorage {
     if (state) {
       return {
         endpoints: Array.isArray(state.endpoints) ? state.endpoints : [],
-        agents: Array.isArray(state.agents) ? state.agents : []
+        agents: Array.isArray(state.agents) ? state.agents : [],
+        pendingActions: Array.isArray(state.pendingActions) ? state.pendingActions : [],
+        runHistory: Array.isArray(state.runHistory) ? state.runHistory : []
       };
     }
 
     const starterState: PersistedState = {
       endpoints: [],
-      agents: createStarterAgents()
+      agents: createStarterAgents(),
+      pendingActions: [],
+      runHistory: []
     };
     await this.saveState(starterState);
     return starterState;
@@ -36,7 +40,9 @@ export class OrchestratorStorage {
 
     return {
       endpoints,
-      agents: state.agents
+      agents: state.agents,
+      pendingActions: state.pendingActions ?? [],
+      runHistory: state.runHistory ?? []
     };
   }
 
@@ -106,6 +112,63 @@ export class OrchestratorStorage {
     await this.saveState({
       ...state,
       agents: createStarterAgents()
+    });
+  }
+
+  async addPendingActions(actions: PendingAction[]): Promise<void> {
+    if (actions.length === 0) {
+      return;
+    }
+
+    const state = await this.getState();
+    await this.saveState({
+      ...state,
+      pendingActions: [...actions, ...(state.pendingActions ?? [])].slice(0, 100)
+    });
+  }
+
+  async updatePendingAction(actionId: string, patch: Partial<PendingAction>): Promise<void> {
+    const state = await this.getState();
+    await this.saveState({
+      ...state,
+      pendingActions: (state.pendingActions ?? []).map(action =>
+        action.id === actionId
+          ? { ...action, ...patch, updatedAt: Date.now() }
+          : action
+      )
+    });
+  }
+
+  async getPendingAction(actionId: string): Promise<PendingAction | undefined> {
+    const state = await this.getState();
+    return (state.pendingActions ?? []).find(action => action.id === actionId);
+  }
+
+  async addRunHistory(entry: RunHistoryEntry): Promise<void> {
+    const state = await this.getState();
+    await this.saveState({
+      ...state,
+      runHistory: [entry, ...(state.runHistory ?? [])].slice(0, 50)
+    });
+  }
+
+  async exportState(): Promise<PersistedState> {
+    const state = await this.getState();
+    return {
+      endpoints: state.endpoints,
+      agents: state.agents,
+      pendingActions: state.pendingActions ?? [],
+      runHistory: state.runHistory ?? []
+    };
+  }
+
+  async importState(imported: Partial<PersistedState>): Promise<void> {
+    const state = await this.getState();
+    await this.saveState({
+      endpoints: Array.isArray(imported.endpoints) ? imported.endpoints : state.endpoints,
+      agents: Array.isArray(imported.agents) ? imported.agents : state.agents,
+      pendingActions: Array.isArray(imported.pendingActions) ? imported.pendingActions : state.pendingActions ?? [],
+      runHistory: Array.isArray(imported.runHistory) ? imported.runHistory : state.runHistory ?? []
     });
   }
 
