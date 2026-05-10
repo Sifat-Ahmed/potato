@@ -1,0 +1,79 @@
+{
+  "name": "private-orchestrator",
+  "displayName": "Private Orchestrator",
+  "description": "Personal VS Code orchestrator for private OpenAI-compatible AI endpoints.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:orchestrator.workbench",
+    "onCommand:orchestrator.open"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "orchestrator.open",
+        "title": "Orchestrator: Open"
+      },
+      {
+        "command": "orchestrator.resetDemoData",
+        "title": "Orchestrator: Reset Starter Agents"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "orchestrator",
+          "title": "Orchestrator",
+          "icon": "resources/orchestrator.svg"
+        }
+      ]
+    },
+    "views": {
+      "orchestrator": [
+        {
+          "id": "orchestrator.workbench",
+          "type": "webview",
+          "name": "Workforce"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Private Orchestrator",
+      "properties": {
+        "orchestrator.autoDelegate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask the manager agent to create delegation tasks for specialized agents."
+        },
+        "orchestrator.maxParallelAgents": {
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Maximum number of delegated agent calls to run at once."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "tsc --noEmit -p ./"
+  },
+  "dependencies": {
+    "@vscode/codicons": "^0.0.36"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.4.5"
+  }
+}
