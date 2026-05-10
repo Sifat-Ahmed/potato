@@ -13,10 +13,12 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
 
   constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly storage: OrchestratorStorage
+    private readonly storage: OrchestratorStorage,
+    private readonly output: vscode.OutputChannel
   ) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
+    this.output.appendLine('Resolving orchestrator webview.');
     this.view = webviewView;
     webviewView.webview.options = {
       enableScripts: true,
@@ -27,6 +29,8 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage(message => {
       void this.handleMessage(message as WebviewToExtensionMessage);
     });
+    void this.refresh();
+    this.output.appendLine('Orchestrator webview resolved.');
   }
 
   async reveal(): Promise<void> {
@@ -71,6 +75,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
           break;
       }
     } catch (error) {
+      this.output.appendLine(`Webview message failed: ${asErrorMessage(error)}`);
       this.post({ type: 'notice', level: 'error', message: asErrorMessage(error) });
     }
   }

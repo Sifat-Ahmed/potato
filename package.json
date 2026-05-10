@@ -40,7 +40,6 @@
       "orchestrator": [
         {
           "id": "orchestrator.workbench",
-          "type": "webview",
           "name": "Workforce"
         }
       ]
