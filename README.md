@@ -10,6 +10,7 @@ This extension is intentionally local-first:
 - It is not prepared for Marketplace publishing.
 - File edits and terminal commands proposed by agents require explicit approval.
 - Configuration import/export intentionally excludes API keys.
+- Chat attachments use the VS Code file picker, support all file types, and cap embedded file content before sending it to a model.
 
 ## Development
 

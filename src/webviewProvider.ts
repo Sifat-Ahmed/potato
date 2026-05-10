@@ -3,7 +3,7 @@ import { LlmClient } from './llmClient';
 import { OrchestratorRuntime } from './orchestrator';
 import { OrchestratorStorage } from './storage';
 import { ToolRunner } from './toolRunner';
-import { ExtensionToWebviewMessage, OrchestratorRunUpdate, RunHistoryEntry, WebviewToExtensionMessage } from './types';
+import { ChatAttachment, ExtensionToWebviewMessage, OrchestratorRunUpdate, RunHistoryEntry, WebviewToExtensionMessage } from './types';
 import { asErrorMessage, createId } from './utils';
 import { renderWebviewHtml } from './webviewHtml';
 import { applyFileEdit, runApprovedTerminalCommand } from './workspaceActions';
@@ -16,11 +16,15 @@ interface ActiveRun {
   updates: OrchestratorRunUpdate[];
 }
 
+const MAX_ATTACHMENTS = 8;
+const MAX_ATTACHMENT_BYTES = 120000;
+
 export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'orchestrator.workbench';
 
   private view?: vscode.WebviewView;
   private activeRun?: ActiveRun;
+  private attachments: ChatAttachment[] = [];
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -51,6 +55,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
   async refresh(): Promise<void> {
     const state = await this.storage.getPublicState();
     this.post({ type: 'state', state });
+    this.post({ type: 'attachments', attachments: this.attachments });
   }
 
   private async handleMessage(message: WebviewToExtensionMessage): Promise<void> {
@@ -64,6 +69,17 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
           break;
         case 'cancelRun':
           this.cancelRun();
+          break;
+        case 'attachFiles':
+          await this.attachFiles();
+          break;
+        case 'removeAttachment':
+          this.attachments = this.attachments.filter(attachment => attachment.id !== message.attachmentId);
+          this.post({ type: 'attachments', attachments: this.attachments });
+          break;
+        case 'clearAttachments':
+          this.attachments = [];
+          this.post({ type: 'attachments', attachments: this.attachments });
           break;
         case 'testEndpoint':
           await this.testEndpoint(message.endpointId);
@@ -112,7 +128,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
 
   private async runTask(text: string): Promise<void> {
     const trimmed = text.trim();
-    if (!trimmed || this.activeRun) {
+    if ((!trimmed && this.attachments.length === 0) || this.activeRun) {
       return;
     }
 
@@ -121,14 +137,16 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
     this.activeRun = {
       controller,
       startedAt: Date.now(),
-      userText: trimmed,
+      userText: trimmed || `${this.attachments.length} attached file(s)`,
       updates
     };
 
     this.post({ type: 'notice', level: 'info', message: 'Run started.' });
     const state = await this.storage.getState();
     const workspaceContext = await createWorkspaceContext();
-    const input = `${trimmed}\n\n${workspaceContext}`;
+    const attachmentContext = createAttachmentContext(this.attachments);
+    const userTask = trimmed || 'Use the attached files as the user input and respond with the most relevant help.';
+    const input = `${userTask}\n\n${attachmentContext}\n\n${workspaceContext}`;
     const runtime = new OrchestratorRuntime(
       new LlmClient(endpointId => this.storage.getApiKey(endpointId)),
       update => {
@@ -153,7 +171,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
 
     const entry: RunHistoryEntry = {
       id: createId('run'),
-      userText: trimmed,
+      userText: this.activeRun.userText,
       status,
       startedAt: this.activeRun.startedAt,
       finishedAt: Date.now(),
@@ -161,6 +179,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
     };
     await this.storage.addRunHistory(entry);
     this.activeRun = undefined;
+    this.attachments = [];
     await this.refresh();
   }
 
@@ -194,6 +213,49 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private async attachFiles(): Promise<void> {
+    const remaining = MAX_ATTACHMENTS - this.attachments.length;
+    if (remaining <= 0) {
+      this.post({ type: 'notice', level: 'warning', message: `Attachment limit reached (${MAX_ATTACHMENTS}).` });
+      return;
+    }
+
+    const uris = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: true,
+      openLabel: 'Attach'
+    });
+    if (!uris?.length) {
+      return;
+    }
+
+    const selected = uris.slice(0, remaining);
+    const attachments = await Promise.all(selected.map(uri => this.readAttachment(uri)));
+    this.attachments = [...this.attachments, ...attachments];
+    this.post({ type: 'attachments', attachments: this.attachments });
+    this.post({ type: 'notice', level: 'info', message: `${attachments.length} file(s) attached.` });
+  }
+
+  private async readAttachment(uri: vscode.Uri): Promise<ChatAttachment> {
+    const stat = await vscode.workspace.fs.stat(uri);
+    const bytes = await vscode.workspace.fs.readFile(uri);
+    const slice = bytes.slice(0, MAX_ATTACHMENT_BYTES);
+    const binary = isLikelyBinary(slice);
+    const relativePath = vscode.workspace.asRelativePath(uri, false);
+
+    return {
+      id: createId('attachment'),
+      name: uri.path.split('/').pop() || relativePath,
+      path: relativePath,
+      size: stat.size,
+      mediaType: guessMediaType(uri.path),
+      binary,
+      truncated: stat.size > MAX_ATTACHMENT_BYTES,
+      content: binary ? undefined : Buffer.from(slice).toString('utf8')
+    };
   }
 
   private async applyAction(actionId: string): Promise<void> {
@@ -258,7 +320,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
     const codiconsUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'node_modules', '@vscode', 'codicons', 'dist', 'codicon.css')
     );
-    return renderWebviewHtml(codiconsUri.toString(), nonce);
+    return renderWebviewHtml(codiconsUri.toString(), nonce, webview.cspSource);
   }
 }
 
@@ -269,4 +331,61 @@ function getNonce(): string {
     nonce += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return nonce;
+}
+
+function createAttachmentContext(attachments: ChatAttachment[]): string {
+  if (attachments.length === 0) {
+    return 'Attached files: none.';
+  }
+
+  return [
+    'Attached files:',
+    ...attachments.map(attachment => [
+      `--- ${attachment.path} (${attachment.mediaType}, ${attachment.size} bytes${attachment.truncated ? ', truncated' : ''}) ---`,
+      attachment.binary
+        ? '[Binary file attached. Content is not embedded in the prompt yet; use the filename and metadata only.]'
+        : attachment.content || ''
+    ].join('\n'))
+  ].join('\n\n');
+}
+
+function isLikelyBinary(bytes: Uint8Array): boolean {
+  const sample = bytes.slice(0, Math.min(bytes.length, 2048));
+  return sample.some(byte => byte === 0);
+}
+
+function guessMediaType(path: string): string {
+  const extension = path.split('.').pop()?.toLowerCase();
+  switch (extension) {
+    case 'md':
+      return 'text/markdown';
+    case 'json':
+      return 'application/json';
+    case 'js':
+    case 'jsx':
+    case 'ts':
+    case 'tsx':
+    case 'css':
+    case 'html':
+    case 'txt':
+    case 'py':
+    case 'java':
+    case 'cs':
+    case 'go':
+    case 'rs':
+    case 'yaml':
+    case 'yml':
+      return 'text/plain';
+    case 'png':
+      return 'image/png';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'gif':
+      return 'image/gif';
+    case 'pdf':
+      return 'application/pdf';
+    default:
+      return 'application/octet-stream';
+  }
 }

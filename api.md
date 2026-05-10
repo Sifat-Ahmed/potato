@@ -51,3 +51,13 @@ Agents can propose file edits and terminal commands. These are never applied aut
 ```
 
 The user must approve or reject each action from the Actions tab.
+
+## Attachment Permissions
+
+Chat attachments are selected through VS Code's native file picker. The webview does not get raw filesystem access.
+
+- Up to 8 files can be attached to a single run.
+- All file types can be selected.
+- Text-like files are embedded into the prompt up to a capped preview size.
+- Binary files are attached as metadata only until multimodal endpoint support is added.
+- Attachments are cleared after a run completes.

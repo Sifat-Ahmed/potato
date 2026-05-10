@@ -1,12 +1,13 @@
-export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
+export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource: string): string {
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} data:; font-src ${cspSource}; style-src ${cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
   <link href="${codiconsUri}" rel="stylesheet">
   <title>Potato</title>
-  <style>
+  <style nonce="${nonce}">
     :root {
       color-scheme: dark;
       --bg: var(--vscode-sideBar-background);
@@ -137,10 +138,9 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
       white-space: nowrap;
     }
     .composer {
-      display: grid;
-      grid-template-columns: 1fr auto auto;
+      display: flex;
+      flex-direction: column;
       gap: 8px;
-      align-items: end;
       position: fixed;
       left: 0;
       right: 0;
@@ -150,9 +150,69 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
       padding: 10px 12px 12px;
       z-index: 10;
     }
-    .composer textarea { min-height: 104px; max-height: 220px; }
+    .composer-card {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--inputBorder);
+      border-radius: 8px;
+      background: var(--input);
+      padding: 8px;
+    }
+    .input-row {
+      display: grid;
+      grid-template-columns: 30px 1fr 30px 30px;
+      gap: 8px;
+      align-items: end;
+    }
+    .composer textarea {
+      min-height: 104px;
+      max-height: 220px;
+      border: 0;
+      background: transparent;
+      padding: 4px 0;
+      resize: vertical;
+    }
+    .composer textarea:focus {
+      border-color: transparent;
+      outline: none;
+    }
+    .attachment-tray {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .attachment-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 100%;
+      min-height: 26px;
+      padding: 3px 6px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      background: var(--bg);
+      font-size: 12px;
+    }
+    .attachment-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .attachment-remove {
+      width: 20px;
+      min-height: 20px;
+      padding: 0;
+      border: 0;
+    }
+    .composer-footer {
+      color: var(--muted);
+      font-size: 11px;
+      text-align: center;
+      line-height: 1.2;
+    }
     .transcript, .history, .actions { display: grid; gap: 10px; min-height: 120px; align-content: start; }
-    .transcript { flex: 1; padding-bottom: 154px; }
+    .transcript { flex: 1; padding-bottom: 190px; }
     .message {
       border-left: 2px solid var(--border);
       padding: 2px 0 2px 10px;
@@ -179,7 +239,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
       position: fixed;
       left: 12px;
       right: 12px;
-      bottom: 142px;
+      bottom: 178px;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 9px 10px;
@@ -192,7 +252,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
     @media (max-width: 420px) {
       .grid-2 { grid-template-columns: 1fr; }
       .brand { align-items: flex-start; }
-      .composer { grid-template-columns: 1fr 30px 30px; }
+      .input-row { grid-template-columns: 30px 1fr 30px 30px; }
     }
   </style>
 </head>
@@ -227,9 +287,16 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
           <div class="empty">Configure an endpoint, assign it to the manager, then run a task.</div>
         </div>
         <div class="composer">
-          <textarea id="taskInput" placeholder="Ask the manager to plan, research, code, or review..."></textarea>
-          <button class="primary icon" id="runTask" title="Run task" aria-label="Run task"><span class="codicon codicon-send"></span></button>
-          <button class="icon" id="cancelRun" title="Stop run" aria-label="Stop run" disabled><span class="codicon codicon-debug-stop"></span></button>
+          <div class="composer-card">
+            <div class="attachment-tray" id="attachmentTray" hidden></div>
+            <div class="input-row">
+              <button class="icon" id="attachFiles" title="Attach files" aria-label="Attach files"><span class="codicon codicon-add"></span></button>
+              <textarea id="taskInput" placeholder="Ask the manager to plan, research, code, or review..."></textarea>
+              <button class="primary icon" id="runTask" title="Run task" aria-label="Run task"><span class="codicon codicon-send"></span></button>
+              <button class="icon" id="cancelRun" title="Stop run" aria-label="Stop run" disabled><span class="codicon codicon-debug-stop"></span></button>
+            </div>
+          </div>
+          <div class="composer-footer">All rights reserved, Sifat Ahmed</div>
         </div>
       </section>
 
@@ -301,7 +368,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    const state = { endpoints: [], agents: [], pendingActions: [], runHistory: [], activeTab: 'chat', running: false, streamNode: null };
+    const state = { endpoints: [], agents: [], pendingActions: [], runHistory: [], attachments: [], activeTab: 'chat', running: false, streamNode: null };
     const $ = (id) => document.getElementById(id);
 
     window.addEventListener('message', event => {
@@ -312,6 +379,10 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
         state.pendingActions = message.state.pendingActions || [];
         state.runHistory = message.state.runHistory || [];
         renderAll();
+      }
+      if (message.type === 'attachments') {
+        state.attachments = message.attachments || [];
+        renderAttachments();
       }
       if (message.type === 'runUpdate') appendRunUpdate(message.update);
       if (message.type === 'notice') showNotice(message.message, message.level);
@@ -342,6 +413,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
     $('exportConfig').addEventListener('click', () => vscode.postMessage({ type: 'exportConfig' }));
     $('runTask').addEventListener('click', runTask);
     $('cancelRun').addEventListener('click', () => vscode.postMessage({ type: 'cancelRun' }));
+    $('attachFiles').addEventListener('click', () => vscode.postMessage({ type: 'attachFiles' }));
     $('taskInput').addEventListener('keydown', event => {
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') runTask();
     });
@@ -440,6 +512,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
       renderEndpoints();
       renderActions();
       renderHistory();
+      renderAttachments();
       if (!$('agentId').value && state.agents[0]) editAgent(state.agents[0]);
       if (!$('endpointId').value && state.endpoints[0]) editEndpoint(state.endpoints[0]);
     }
@@ -488,6 +561,22 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
       list.innerHTML = state.runHistory.map(run => '<div class="item"><div class="row split"><span class="item-title">' + escapeHtml(run.userText) + '</span><span class="badge">' + escapeHtml(run.status) + '</span></div><div class="meta">' + new Date(run.startedAt).toLocaleString() + ' · ' + run.updates.length + ' updates</div></div>').join('');
     }
 
+    function renderAttachments() {
+      const tray = $('attachmentTray');
+      tray.hidden = state.attachments.length === 0;
+      tray.innerHTML = state.attachments.map(attachment =>
+        '<span class="attachment-chip" title="' + escapeHtml(attachment.path) + '">' +
+          '<span class="codicon codicon-file"></span>' +
+          '<span class="attachment-name">' + escapeHtml(attachment.name) + '</span>' +
+          '<span class="meta">' + escapeHtml(formatBytes(attachment.size)) + '</span>' +
+          '<button class="attachment-remove" data-remove-attachment="' + escapeHtml(attachment.id) + '" title="Remove attachment" aria-label="Remove attachment"><span class="codicon codicon-close"></span></button>' +
+        '</span>'
+      ).join('');
+      tray.querySelectorAll('[data-remove-attachment]').forEach(button => {
+        button.addEventListener('click', () => vscode.postMessage({ type: 'removeAttachment', attachmentId: button.dataset.removeAttachment }));
+      });
+    }
+
     function editAgent(agent) {
       $('agentId').value = agent?.id || '';
       $('agentName').value = agent?.name || '';
@@ -516,13 +605,13 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
 
     function runTask() {
       const text = $('taskInput').value.trim();
-      if (!text || state.running) return;
+      if ((!text && state.attachments.length === 0) || state.running) return;
       state.running = true;
       state.streamNode = null;
       $('runTask').disabled = true;
       $('cancelRun').disabled = false;
       $('transcript').innerHTML = '';
-      appendMessage('User', text);
+      appendMessage('User', text || 'Attached files');
       vscode.postMessage({ type: 'runTask', text });
     }
 
@@ -572,6 +661,11 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
     }
 
     function createId(prefix) { return prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10); }
+    function formatBytes(value) {
+      if (value < 1024) return value + ' B';
+      if (value < 1024 * 1024) return Math.round(value / 1024) + ' KB';
+      return (value / (1024 * 1024)).toFixed(1) + ' MB';
+    }
     function escapeHtml(value) {
       return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }

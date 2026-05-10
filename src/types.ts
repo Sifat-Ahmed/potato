@@ -121,6 +121,17 @@ export interface RunHistoryEntry {
   updates: OrchestratorRunUpdate[];
 }
 
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  path: string;
+  size: number;
+  mediaType: string;
+  binary: boolean;
+  truncated: boolean;
+  content?: string;
+}
+
 export interface OrchestratorRunUpdate {
   kind: 'status' | 'plan' | 'agent-result' | 'final' | 'error' | 'token' | 'tool-result' | 'action-proposal' | 'cancelled';
   message: string;
@@ -151,6 +162,9 @@ export type WebviewToExtensionMessage =
   | { type: 'ready' }
   | { type: 'runTask'; text: string }
   | { type: 'cancelRun' }
+  | { type: 'attachFiles' }
+  | { type: 'removeAttachment'; attachmentId: string }
+  | { type: 'clearAttachments' }
   | { type: 'testEndpoint'; endpointId: string }
   | { type: 'saveEndpoint'; endpoint: Omit<EndpointConfig, 'createdAt' | 'updatedAt'>; apiKey?: string }
   | { type: 'deleteEndpoint'; endpointId: string }
@@ -164,5 +178,6 @@ export type WebviewToExtensionMessage =
 
 export type ExtensionToWebviewMessage =
   | { type: 'state'; state: PublicState }
+  | { type: 'attachments'; attachments: ChatAttachment[] }
   | { type: 'runUpdate'; update: OrchestratorRunUpdate }
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string };
