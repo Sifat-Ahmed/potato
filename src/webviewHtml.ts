@@ -150,9 +150,9 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
       padding: 10px 12px 12px;
       z-index: 10;
     }
-    .composer textarea { min-height: 56px; max-height: 160px; }
+    .composer textarea { min-height: 104px; max-height: 220px; }
     .transcript, .history, .actions { display: grid; gap: 10px; min-height: 120px; align-content: start; }
-    .transcript { flex: 1; padding-bottom: 104px; }
+    .transcript { flex: 1; padding-bottom: 154px; }
     .message {
       border-left: 2px solid var(--border);
       padding: 2px 0 2px 10px;
@@ -179,7 +179,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string): string {
       position: fixed;
       left: 12px;
       right: 12px;
-      bottom: 92px;
+      bottom: 142px;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 9px 10px;
