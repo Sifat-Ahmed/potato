@@ -43,7 +43,8 @@ export class OrchestratorStorage {
       endpoints,
       agents: state.agents,
       pendingActions: state.pendingActions ?? [],
-      runHistory: state.runHistory ?? []
+      runHistory: state.runHistory ?? [],
+      conversations: []
     };
   }
 
@@ -75,6 +76,7 @@ export class OrchestratorStorage {
   async deleteEndpoint(endpointId: string): Promise<void> {
     const state = await this.getState();
     await this.saveState({
+      ...state,
       endpoints: state.endpoints.filter(endpoint => endpoint.id !== endpointId),
       agents: state.agents.map(agent =>
         agent.endpointId === endpointId ? { ...agent, endpointId: undefined, updatedAt: Date.now() } : agent

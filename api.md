@@ -27,18 +27,21 @@ Models that do not support native function calling can request local tools by re
 {
   "toolCalls": [
     { "name": "web_search", "arguments": { "query": "search text" } },
+    { "name": "fetch_url", "arguments": { "url": "https://example.com" } },
     { "name": "list_files", "arguments": { "glob": "src/**/*.ts" } },
-    { "name": "read_file", "arguments": { "path": "src/file.ts" } },
-    { "name": "search_workspace", "arguments": { "query": "needle" } }
+    { "name": "read_file", "arguments": { "path": "src/file.ts", "maxBytes": 12000 } },
+    { "name": "search_workspace", "arguments": { "query": "needle" } },
+    { "name": "write_file", "arguments": { "path": "src/file.ts", "content": "full file content", "description": "why" } },
+    { "name": "delete_file", "arguments": { "path": "src/old.ts", "description": "why" } }
   ]
 }
 ```
 
-The extension executes those tools locally, returns results to the agent, and asks for the final response.
+The extension executes read-only tools locally, returns results to the agent, and asks for the final response. Mutating tools queue approval actions instead of changing files directly.
 
 ## Approval Actions
 
-Agents can propose file edits and terminal commands. These are never applied automatically.
+Agents can propose file edits, file deletes, and terminal commands. These are never applied automatically.
 
 ```json
 {
@@ -47,6 +50,12 @@ Agents can propose file edits and terminal commands. These are never applied aut
       "path": "relative/path.ts",
       "content": "full file content",
       "description": "why this edit is needed"
+    }
+  ],
+  "fileDeletes": [
+    {
+      "path": "relative/old-file.ts",
+      "description": "why this file should be deleted"
     }
   ],
   "terminalCommands": [
@@ -60,6 +69,12 @@ Agents can propose file edits and terminal commands. These are never applied aut
 ```
 
 The user must approve or reject each action from the Actions tab.
+
+## Conversation Database
+
+Conversation history is stored in a plaintext local JSON database named `conversation-db.v1.json` under VS Code extension global storage. The active conversation is loaded into the chat transcript and recent conversation messages are included as context for new runs.
+
+Run history remains capped at 50 entries and stores the detailed status/tool/action updates for each run.
 
 ## Attachment Permissions
 

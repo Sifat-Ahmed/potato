@@ -60,7 +60,7 @@ export interface DelegationTask {
   instructions: string;
 }
 
-export type ToolName = 'web_search' | 'list_files' | 'read_file' | 'search_workspace';
+export type ToolName = 'web_search' | 'fetch_url' | 'list_files' | 'read_file' | 'search_workspace' | 'write_file' | 'delete_file';
 
 export interface ToolCall {
   name: ToolName;
@@ -75,11 +75,17 @@ export interface ToolResult {
   name: ToolName;
   ok: boolean;
   content: string;
+  actions?: PendingAction[];
 }
 
 export interface FileEditProposal {
   path: string;
   content: string;
+  description?: string;
+}
+
+export interface FileDeleteProposal {
+  path: string;
   description?: string;
 }
 
@@ -91,10 +97,11 @@ export interface TerminalCommandProposal {
 
 export interface ActionProposalEnvelope {
   fileEdits?: FileEditProposal[];
+  fileDeletes?: FileDeleteProposal[];
   terminalCommands?: TerminalCommandProposal[];
 }
 
-export type PendingActionKind = 'file-edit' | 'terminal-command';
+export type PendingActionKind = 'file-edit' | 'file-delete' | 'terminal-command';
 
 export type PendingActionStatus = 'pending' | 'applied' | 'rejected' | 'failed';
 
@@ -108,17 +115,46 @@ export interface PendingAction {
   createdAt: number;
   updatedAt: number;
   fileEdit?: FileEditProposal;
+  fileDelete?: FileDeleteProposal;
   terminalCommand?: TerminalCommandProposal;
   result?: string;
 }
 
 export interface RunHistoryEntry {
   id: string;
+  conversationId?: string;
   userText: string;
   status: 'completed' | 'failed' | 'cancelled';
   startedAt: number;
   finishedAt: number;
   updates: OrchestratorRunUpdate[];
+}
+
+export type ConversationMessageRole = 'user' | 'assistant' | 'system' | 'tool';
+
+export interface ConversationMessage {
+  id: string;
+  role: ConversationMessageRole;
+  content: string;
+  createdAt: number;
+  runId?: string;
+  updateKind?: OrchestratorRunUpdate['kind'];
+}
+
+export interface ConversationRecord {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: ConversationMessage[];
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
 }
 
 export interface ChatAttachment {
@@ -156,6 +192,8 @@ export interface PublicState {
   agents: AgentConfig[];
   pendingActions: PendingAction[];
   runHistory: RunHistoryEntry[];
+  conversations: ConversationSummary[];
+  activeConversation?: ConversationRecord;
 }
 
 export type WebviewToExtensionMessage =
@@ -165,6 +203,9 @@ export type WebviewToExtensionMessage =
   | { type: 'attachFiles' }
   | { type: 'removeAttachment'; attachmentId: string }
   | { type: 'clearAttachments' }
+  | { type: 'newConversation' }
+  | { type: 'openConversation'; conversationId: string }
+  | { type: 'deleteConversation'; conversationId: string }
   | { type: 'testEndpoint'; endpointId: string }
   | { type: 'saveAndTestEndpoint'; endpoint: Omit<EndpointConfig, 'createdAt' | 'updatedAt'>; apiKey?: string }
   | { type: 'loadEndpointKey'; endpointId: string }

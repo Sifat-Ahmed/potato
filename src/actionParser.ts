@@ -31,6 +31,20 @@ export function extractPendingActions(text: string, sourceAgent: AgentConfig): P
       fileEdit: edit
     }));
 
+  const fileDeleteActions: PendingAction[] = (parsed.fileDeletes ?? [])
+    .filter(fileDelete => fileDelete.path)
+    .map(fileDelete => ({
+      id: createId('action'),
+      kind: 'file-delete',
+      title: fileDelete.description || `Delete ${fileDelete.path}`,
+      sourceAgentId: sourceAgent.id,
+      sourceAgentName: sourceAgent.name,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+      fileDelete
+    }));
+
   const terminalActions: PendingAction[] = (parsed.terminalCommands ?? [])
     .filter(command => command.command)
     .map(command => ({
@@ -45,11 +59,11 @@ export function extractPendingActions(text: string, sourceAgent: AgentConfig): P
       terminalCommand: command
     }));
 
-  return [...fileActions, ...terminalActions].slice(0, 20);
+  return [...fileActions, ...fileDeleteActions, ...terminalActions].slice(0, 20);
 }
 
 function isToolCall(value: ToolCall): boolean {
-  return ['web_search', 'list_files', 'read_file', 'search_workspace'].includes(value.name)
+  return ['web_search', 'fetch_url', 'list_files', 'read_file', 'search_workspace', 'write_file', 'delete_file'].includes(value.name)
     && typeof value.arguments === 'object'
     && value.arguments !== null;
 }

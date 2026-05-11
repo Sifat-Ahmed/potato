@@ -14,6 +14,17 @@ export async function applyFileEdit(action: PendingAction): Promise<string> {
   return `Wrote ${edit.path}.`;
 }
 
+export async function applyFileDelete(action: PendingAction): Promise<string> {
+  const fileDelete = action.fileDelete;
+  if (!fileDelete) {
+    throw new Error('Action is not a file delete.');
+  }
+
+  const uri = resolveWorkspaceUri(fileDelete.path);
+  await vscode.workspace.fs.delete(uri, { recursive: false, useTrash: true });
+  return `Deleted ${fileDelete.path}.`;
+}
+
 export function runApprovedTerminalCommand(action: PendingAction): string {
   const command = action.terminalCommand;
   if (!command) {
