@@ -22,6 +22,15 @@ npm test
 
 Open this folder in VS Code, press `F5`, and use the Potato activity bar icon in the extension host window.
 
+On macOS or Linux:
+
+```bash
+npm install
+npm run compile
+```
+
+If VS Code reports `Cannot find module .../out/extension.js`, the source folder has not been compiled yet. Run the two commands above from the repo root, then reload the Extension Development Host.
+
 ## Local Package
 
 ```powershell
@@ -29,3 +38,5 @@ npm run package:vsix
 ```
 
 The generated `.vsix` is for local installation only and is ignored by git.
+
+Install the generated `potato.vsix` on another machine when you want to use Potato without opening the source repo.

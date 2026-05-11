@@ -73,7 +73,8 @@
     "watch": "tsc -watch -p ./",
     "lint": "tsc --noEmit -p ./",
     "test": "npm run compile && node --test test/orchestrator-protocol.test.js",
-    "package:vsix": "vsce package --out potato.vsix"
+    "vscode:prepublish": "npm run compile",
+    "package:vsix": "npm run compile && vsce package --out potato.vsix"
   },
   "dependencies": {
     "@vscode/codicons": "^0.0.36"
