@@ -37,12 +37,21 @@ export class LlmClient {
       return this.callAgentStreaming(endpoint, request, url, headers, body);
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: request.abortSignal
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: request.abortSignal
+      });
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+
+      throw new Error(`Connection error calling ${endpoint.name} at ${url}: ${formatFetchError(error)}`);
+    }
 
     const responseText = await response.text();
     let parsed: unknown;
@@ -93,12 +102,21 @@ export class LlmClient {
     body: unknown
   ): Promise<AgentCallResult> {
     const streamedBody = { ...(body as Record<string, unknown>), stream: true };
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(streamedBody),
-      signal: request.abortSignal
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(streamedBody),
+        signal: request.abortSignal
+      });
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+
+      throw new Error(`Connection error calling ${endpoint.name} at ${url}: ${formatFetchError(error)}`);
+    }
 
     if (!response.ok || !response.body) {
       const responseText = await response.text();
@@ -322,4 +340,16 @@ export class LlmClient {
     const choice = parsed.choices?.[0];
     return choice?.delta?.content ?? choice?.text ?? '';
   }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function formatFetchError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.cause instanceof Error ? `${error.message}: ${error.cause.message}` : error.message;
+  }
+
+  return typeof error === 'string' ? error : 'Unknown network error';
 }
