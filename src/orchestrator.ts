@@ -189,7 +189,16 @@ export class OrchestratorRuntime {
 
     if (toolCalls.length > 0) {
       this.emit({ kind: 'status', message: `${agent.name} requested ${toolCalls.length} local tool call(s).` });
-      const toolResults = await Promise.all(toolCalls.map(call => this.toolRunner.run(call)));
+      const toolResults = await Promise.all(toolCalls.map(call => this.toolRunner.run(call, agent)));
+      const toolActions = toolResults.flatMap(result => result.actions ?? []);
+      if (toolActions.length > 0) {
+        await this.recordActions(toolActions);
+        this.emit({
+          kind: 'action-proposal',
+          message: `${agent.name} queued ${toolActions.length} approval action(s) from local tools.`,
+          actions: toolActions
+        });
+      }
       this.emit({
         kind: 'tool-result',
         message: toolResults.map(item => `${item.name}: ${item.ok ? 'ok' : 'failed'}\n${item.content}`).join('\n\n')
@@ -201,9 +210,9 @@ export class OrchestratorRuntime {
           input,
           '',
           'Local tool results:',
-          JSON.stringify(toolResults, null, 2),
+          JSON.stringify(toolResults.map(({ actions, ...toolResult }) => toolResult), null, 2),
           '',
-          'Now produce the final response. If file edits or terminal commands are needed, return the approved action proposal JSON schema from the tool instructions.'
+          'Now produce the final response. If file writes, file deletes, or terminal commands are needed, return the approved action proposal JSON schema from the tool instructions.'
         ].join('\n'),
         abortSignal,
         onToken: token => this.emit({ kind: 'token', message: token })
@@ -227,9 +236,9 @@ export class OrchestratorRuntime {
 function toolProtocolInstructions(): string {
   return [
     'Local tools are available through a provider-neutral JSON protocol.',
-    'To use tools, reply only with valid JSON: {"toolCalls":[{"name":"web_search","arguments":{"query":"text"}},{"name":"list_files","arguments":{"glob":"src/**/*.ts"}},{"name":"read_file","arguments":{"path":"src/file.ts"}},{"name":"search_workspace","arguments":{"query":"text"}}]}',
+    'To use tools, reply only with valid JSON: {"toolCalls":[{"name":"web_search","arguments":{"query":"text"}},{"name":"fetch_url","arguments":{"url":"https://example.com"}},{"name":"list_files","arguments":{"glob":"src/**/*.ts"}},{"name":"read_file","arguments":{"path":"src/file.ts","maxBytes":12000}},{"name":"search_workspace","arguments":{"query":"needle"}},{"name":"write_file","arguments":{"path":"relative/path.ts","content":"full file content","description":"why"}},{"name":"delete_file","arguments":{"path":"relative/path.ts","description":"why"}}]}',
     'Do not pretend a tool ran. Request a tool call first, then wait for tool results.',
-    'To propose workspace changes, reply with valid JSON: {"fileEdits":[{"path":"relative/path","content":"full file content","description":"why"}],"terminalCommands":[{"command":"npm test","cwd":"optional/path","description":"why"}]}',
-    'File edits and terminal commands require user approval before execution.'
+    'To propose workspace changes instead of tool calls, reply with valid JSON: {"fileEdits":[{"path":"relative/path","content":"full file content","description":"why"}],"fileDeletes":[{"path":"relative/path","description":"why"}],"terminalCommands":[{"command":"npm test","cwd":"optional/path","description":"why"}]}',
+    'File writes, file deletes, and terminal commands require user approval before execution.'
   ].join('\n');
 }

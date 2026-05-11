@@ -6,13 +6,15 @@ This extension is intentionally local-first:
 
 - Endpoint API keys are stored locally in VS Code SecretStorage with a plaintext extension-storage fallback and can be revealed from the endpoint form when needed.
 - Agent and endpoint metadata are stored in VS Code global state.
+- Conversations are stored in a plaintext local JSON database under VS Code extension global storage and can be reopened from History.
 - Chat Completions, Responses, and legacy Completions style endpoints are supported.
 - It is not prepared for Marketplace publishing.
-- File edits and terminal commands proposed by agents require explicit approval.
+- File writes, file deletes, and terminal commands proposed by agents require explicit approval.
 - Configuration import/export intentionally excludes API keys.
 - Chat attachments use the VS Code file picker, support all file types, and cap embedded file content before sending it to a model.
 - Chat run errors are shown in the transcript. Press Enter to send and Shift+Enter for a new line.
 - For OpenAI-compatible APIM/Azure-style URLs, paste the endpoint base through `/openai`; Potato uses the standard `/chat/completions` route like Cline unless you add a path override.
+- Local tools support web search, URL fetch, file listing, file reading, workspace search, and approval-queued file write/delete actions.
 
 ## Development
 

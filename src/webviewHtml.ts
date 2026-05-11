@@ -125,6 +125,20 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       background: color-mix(in srgb, var(--bg) 90%, var(--text) 10%);
       text-align: left;
     }
+    .item.active { border-color: var(--focus); }
+    .conversation-open {
+      width: 100%;
+      min-height: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      text-align: left;
+      display: grid;
+      gap: 4px;
+      justify-content: stretch;
+    }
+    .conversation-open:hover { background: transparent; }
     .item-title { font-weight: 600; overflow-wrap: anywhere; }
     .badge {
       display: inline-flex;
@@ -364,11 +378,16 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       </section>
 
       <section class="section" id="actions">
-        <div><div class="item-title">Approval Queue</div><div class="hint">File edits and terminal commands stay here until approved.</div></div>
+        <div><div class="item-title">Approval Queue</div><div class="hint">File writes, file deletes, and terminal commands stay here until approved.</div></div>
         <div class="actions" id="actionList"></div>
       </section>
 
       <section class="section" id="history">
+        <div class="row split">
+          <div><div class="item-title">Conversation History</div><div class="hint">Conversations are stored locally.</div></div>
+          <button id="newConversation"><span class="codicon codicon-add"></span>New chat</button>
+        </div>
+        <div class="history" id="conversationList"></div>
         <div><div class="item-title">Run History</div><div class="hint">Last 50 runs are stored locally.</div></div>
         <div class="history" id="historyList"></div>
       </section>
@@ -378,7 +397,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    const state = { endpoints: [], agents: [], pendingActions: [], runHistory: [], attachments: [], activeTab: 'chat', running: false, streamNode: null };
+    const state = { endpoints: [], agents: [], pendingActions: [], runHistory: [], conversations: [], activeConversation: undefined, attachments: [], activeTab: 'chat', running: false, streamNode: null };
     const $ = (id) => document.getElementById(id);
 
     window.addEventListener('message', event => {
@@ -388,6 +407,8 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
         state.agents = message.state.agents || [];
         state.pendingActions = message.state.pendingActions || [];
         state.runHistory = message.state.runHistory || [];
+        state.conversations = message.state.conversations || [];
+        state.activeConversation = message.state.activeConversation;
         renderAll();
       }
       if (message.type === 'attachments') {
@@ -424,6 +445,10 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
     $('refresh').addEventListener('click', () => vscode.postMessage({ type: 'ready' }));
     $('importConfig').addEventListener('click', () => vscode.postMessage({ type: 'importConfig' }));
     $('exportConfig').addEventListener('click', () => vscode.postMessage({ type: 'exportConfig' }));
+    $('newConversation').addEventListener('click', () => {
+      vscode.postMessage({ type: 'newConversation' });
+      setTab('chat');
+    });
     $('runTask').addEventListener('click', runTask);
     $('cancelRun').addEventListener('click', () => vscode.postMessage({ type: 'cancelRun' }));
     $('attachFiles').addEventListener('click', () => vscode.postMessage({ type: 'attachFiles' }));
@@ -533,14 +558,16 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
     }
 
     function renderAll() {
-      $('summary').textContent = state.endpoints.length + ' endpoint' + (state.endpoints.length === 1 ? '' : 's') + ', ' + state.agents.length + ' agent' + (state.agents.length === 1 ? '' : 's') + ', ' + pendingCount() + ' pending';
+      $('summary').textContent = state.endpoints.length + ' endpoint' + (state.endpoints.length === 1 ? '' : 's') + ', ' + state.agents.length + ' agent' + (state.agents.length === 1 ? '' : 's') + ', ' + state.conversations.length + ' chat' + (state.conversations.length === 1 ? '' : 's') + ', ' + pendingCount() + ' pending';
       $('actionCount').textContent = String(pendingCount());
       renderEndpointOptions();
       renderAgents();
       renderEndpoints();
       renderActions();
+      renderConversations();
       renderHistory();
       renderAttachments();
+      if (!state.running) renderConversation();
       if (!$('agentId').value && state.agents[0]) editAgent(state.agents[0]);
       if (!$('endpointId').value && state.endpoints[0]) editEndpoint(state.endpoints[0]);
     }
@@ -575,7 +602,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       const list = $('actionList');
       if (!state.pendingActions.length) { list.innerHTML = '<div class="empty">No proposed actions yet.</div>'; return; }
       list.innerHTML = state.pendingActions.map(action => {
-        const detail = action.kind === 'file-edit' ? action.fileEdit?.path : action.terminalCommand?.command;
+        const detail = action.kind === 'file-edit' ? action.fileEdit?.path : action.kind === 'file-delete' ? action.fileDelete?.path : action.terminalCommand?.command;
         const buttons = action.status === 'pending' ? '<div class="row"><button class="primary" data-apply="' + escapeHtml(action.id) + '"><span class="codicon codicon-check"></span>Apply</button><button class="danger" data-reject="' + escapeHtml(action.id) + '"><span class="codicon codicon-close"></span>Reject</button></div>' : '';
         return '<div class="item"><div class="row split"><span class="item-title">' + escapeHtml(action.title) + '</span><span class="badge">' + escapeHtml(action.status) + '</span></div><div class="meta">' + escapeHtml(action.kind) + ' · ' + escapeHtml(action.sourceAgentName || 'agent') + '</div><div class="message">' + escapeHtml(detail || '') + '</div>' + (action.result ? '<div class="meta">' + escapeHtml(action.result) + '</div>' : '') + buttons + '</div>';
       }).join('');
@@ -583,10 +610,44 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       list.querySelectorAll('[data-reject]').forEach(button => button.addEventListener('click', () => vscode.postMessage({ type: 'rejectAction', actionId: button.dataset.reject })));
     }
 
+    function renderConversations() {
+      const list = $('conversationList');
+      if (!state.conversations.length) { list.innerHTML = '<div class="empty">No conversations yet.</div>'; return; }
+      list.innerHTML = state.conversations.map(conversation =>
+        '<div class="item ' + (state.activeConversation?.id === conversation.id ? 'active' : '') + '">' +
+          '<button class="conversation-open" data-conversation-id="' + escapeHtml(conversation.id) + '">' +
+            '<div class="row split"><span class="item-title">' + escapeHtml(conversation.title) + '</span><span class="badge">' + escapeHtml(String(conversation.messageCount)) + '</span></div>' +
+            '<div class="meta">' + new Date(conversation.updatedAt).toLocaleString() + '</div>' +
+          '</button>' +
+          '<div class="row"><button class="danger" data-delete-conversation="' + escapeHtml(conversation.id) + '"><span class="codicon codicon-trash"></span>Delete</button></div>' +
+        '</div>'
+      ).join('');
+      list.querySelectorAll('[data-conversation-id]').forEach(button => button.addEventListener('click', () => {
+        vscode.postMessage({ type: 'openConversation', conversationId: button.dataset.conversationId });
+        setTab('chat');
+      }));
+      list.querySelectorAll('[data-delete-conversation]').forEach(button => button.addEventListener('click', event => {
+        event.stopPropagation();
+        vscode.postMessage({ type: 'deleteConversation', conversationId: button.dataset.deleteConversation });
+      }));
+    }
+
     function renderHistory() {
       const list = $('historyList');
       if (!state.runHistory.length) { list.innerHTML = '<div class="empty">No completed runs yet.</div>'; return; }
       list.innerHTML = state.runHistory.map(run => '<div class="item"><div class="row split"><span class="item-title">' + escapeHtml(run.userText) + '</span><span class="badge">' + escapeHtml(run.status) + '</span></div><div class="meta">' + new Date(run.startedAt).toLocaleString() + ' · ' + run.updates.length + ' updates</div></div>').join('');
+    }
+
+    function renderConversation() {
+      const transcript = $('transcript');
+      transcript.innerHTML = '';
+      const messages = state.activeConversation?.messages || [];
+      if (!messages.length) {
+        transcript.innerHTML = '<div class="empty">Configure an endpoint, assign it to the manager, then run a task.</div>';
+        return;
+      }
+
+      messages.forEach(message => appendMessage(labelForMessage(message), message.content, classForMessage(message)));
     }
 
     function renderAttachments() {
@@ -676,7 +737,6 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       state.streamNode = null;
       setRunButtonLoading(true);
       $('cancelRun').disabled = false;
-      $('transcript').innerHTML = '';
       appendMessage('User', text || 'Attached files');
       $('taskInput').value = '';
       vscode.postMessage({ type: 'runTask', text });
@@ -721,12 +781,26 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
     }
 
     function appendMessage(label, body, extraClass) {
+      $('transcript').querySelectorAll('.empty').forEach(node => node.remove());
       const node = document.createElement('div');
       node.className = 'message ' + (extraClass || '');
       node.innerHTML = '<div class="message-label">' + escapeHtml(label) + '</div><span class="message-body">' + escapeHtml(body) + '</span>';
       $('transcript').appendChild(node);
       node.scrollIntoView({ block: 'end' });
       return node;
+    }
+
+    function labelForMessage(message) {
+      if (message.role === 'user') return 'User';
+      if (message.role === 'assistant') return 'Manager';
+      if (message.role === 'tool') return 'Tool';
+      return 'System';
+    }
+
+    function classForMessage(message) {
+      if (message.role === 'assistant') return 'final';
+      if (message.role === 'system') return 'error';
+      return '';
     }
 
     function showNotice(message, level) {

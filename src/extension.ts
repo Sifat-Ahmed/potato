@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ConversationDatabase } from './conversationDatabase';
 import { OrchestratorStorage } from './storage';
 import { OrchestratorWebviewProvider } from './webviewProvider';
 
@@ -7,7 +8,8 @@ export function activate(context: vscode.ExtensionContext): void {
   output.appendLine('Activating Potato.');
 
   const storage = new OrchestratorStorage(context);
-  const provider = new OrchestratorWebviewProvider(context, storage, output);
+  const conversationDatabase = new ConversationDatabase(context);
+  const provider = new OrchestratorWebviewProvider(context, storage, conversationDatabase, output);
 
   context.subscriptions.push(
     output,

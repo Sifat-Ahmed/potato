@@ -24,24 +24,28 @@ test('extractToolCalls returns supported tool calls only', () => {
   const calls = extractToolCalls(JSON.stringify({
     toolCalls: [
       { name: 'read_file', arguments: { path: 'src/types.ts' } },
+      { name: 'write_file', arguments: { path: 'src/example.ts', content: 'export {};' } },
       { name: 'unknown', arguments: {} }
     ]
   }));
 
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
   assert.equal(calls[0].name, 'read_file');
+  assert.equal(calls[1].name, 'write_file');
 });
 
 test('extractPendingActions creates approval actions', () => {
   const actions = extractPendingActions(JSON.stringify({
     fileEdits: [{ path: 'src/example.ts', content: 'export {};', description: 'Add example' }],
+    fileDeletes: [{ path: 'src/old.ts', description: 'Remove old file' }],
     terminalCommands: [{ command: 'npm test', description: 'Run tests' }]
   }), agent);
 
-  assert.equal(actions.length, 2);
+  assert.equal(actions.length, 3);
   assert.equal(actions[0].kind, 'file-edit');
   assert.equal(actions[0].status, 'pending');
-  assert.equal(actions[1].kind, 'terminal-command');
+  assert.equal(actions[1].kind, 'file-delete');
+  assert.equal(actions[2].kind, 'terminal-command');
 });
 
 test('resolveEndpointUrl builds OpenAI-compatible APIM chat routes', () => {

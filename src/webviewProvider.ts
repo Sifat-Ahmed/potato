@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ConversationDatabase } from './conversationDatabase';
 import { LlmClient } from './llmClient';
 import { OrchestratorRuntime } from './orchestrator';
 import { OrchestratorStorage } from './storage';
@@ -6,11 +7,12 @@ import { ToolRunner } from './toolRunner';
 import { ChatAttachment, ExtensionToWebviewMessage, OrchestratorRunUpdate, RunHistoryEntry, WebviewToExtensionMessage } from './types';
 import { asErrorMessage, createId } from './utils';
 import { renderWebviewHtml } from './webviewHtml';
-import { applyFileEdit, runApprovedTerminalCommand } from './workspaceActions';
+import { applyFileDelete, applyFileEdit, runApprovedTerminalCommand } from './workspaceActions';
 import { createWorkspaceContext } from './workspaceContext';
 
 interface ActiveRun {
   controller: AbortController;
+  conversationId: string;
   startedAt: number;
   userText: string;
   updates: OrchestratorRunUpdate[];
@@ -29,6 +31,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly storage: OrchestratorStorage,
+    private readonly conversationDatabase: ConversationDatabase,
     private readonly output: vscode.OutputChannel
   ) {}
 
@@ -53,8 +56,11 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   async refresh(): Promise<void> {
-    const state = await this.storage.getPublicState();
-    this.post({ type: 'state', state });
+    const [state, conversations] = await Promise.all([
+      this.storage.getPublicState(),
+      this.conversationDatabase.getPublicState()
+    ]);
+    this.post({ type: 'state', state: { ...state, ...conversations } });
     this.post({ type: 'attachments', attachments: this.attachments });
   }
 
@@ -80,6 +86,18 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
         case 'clearAttachments':
           this.attachments = [];
           this.post({ type: 'attachments', attachments: this.attachments });
+          break;
+        case 'newConversation':
+          await this.conversationDatabase.createConversation();
+          await this.refresh();
+          break;
+        case 'openConversation':
+          await this.conversationDatabase.openConversation(message.conversationId);
+          await this.refresh();
+          break;
+        case 'deleteConversation':
+          await this.conversationDatabase.deleteConversation(message.conversationId);
+          await this.refresh();
           break;
         case 'testEndpoint':
           await this.testEndpoint(message.endpointId);
@@ -150,10 +168,18 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
 
     const controller = new AbortController();
     const updates: OrchestratorRunUpdate[] = [];
+    const userText = trimmed || `${this.attachments.length} attached file(s)`;
+    const conversation = await this.conversationDatabase.getOrCreateActiveConversation(userText);
+    const conversationContext = await this.conversationDatabase.buildContext(conversation.id);
+    await this.conversationDatabase.appendMessage(conversation.id, {
+      role: 'user',
+      content: userText
+    });
     this.activeRun = {
       controller,
+      conversationId: conversation.id,
       startedAt: Date.now(),
-      userText: trimmed || `${this.attachments.length} attached file(s)`,
+      userText,
       updates
     };
 
@@ -163,7 +189,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
       const workspaceContext = await createWorkspaceContext();
       const attachmentContext = createAttachmentContext(this.attachments);
       const userTask = trimmed || 'Use the attached files as the user input and respond with the most relevant help.';
-      const input = `${userTask}\n\n${attachmentContext}\n\n${workspaceContext}`;
+      const input = `${userTask}\n\n${conversationContext}\n\n${attachmentContext}\n\n${workspaceContext}`;
       const runtime = new OrchestratorRuntime(
         new LlmClient(endpointId => this.storage.getApiKey(endpointId)),
         update => {
@@ -201,6 +227,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
 
       const entry: RunHistoryEntry = {
         id: createId('run'),
+        conversationId: activeRun.conversationId,
         userText: activeRun.userText,
         status,
         startedAt: activeRun.startedAt,
@@ -211,6 +238,17 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
       this.attachments = [];
       try {
         await this.storage.addRunHistory(entry);
+        const outcome = [...updates].reverse().find(update =>
+          update.kind === 'final' || update.kind === 'error' || update.kind === 'cancelled'
+        );
+        if (outcome) {
+          await this.conversationDatabase.appendMessage(activeRun.conversationId, {
+            role: outcome.kind === 'final' ? 'assistant' : 'system',
+            content: outcome.message,
+            runId: entry.id,
+            updateKind: outcome.kind
+          });
+        }
       } catch (error) {
         this.output.appendLine(`Failed to persist run history: ${asErrorMessage(error)}`);
         this.post({ type: 'notice', level: 'warning', message: `Run completed, but history was not saved: ${asErrorMessage(error)}` });
@@ -302,6 +340,8 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
 
     const result = action.kind === 'file-edit'
       ? await applyFileEdit(action)
+      : action.kind === 'file-delete'
+        ? await applyFileDelete(action)
       : runApprovedTerminalCommand(action);
 
     await this.storage.updatePendingAction(actionId, { status: 'applied', result });
