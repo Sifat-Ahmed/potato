@@ -321,7 +321,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
           </div>
           <div class="field"><label for="agentEndpoint">Endpoint</label><select id="agentEndpoint"></select></div>
           <div class="grid-2">
-            <div class="field"><label for="agentModel">Model</label><input id="agentModel" placeholder="deployment or model id"></div>
+            <div class="field"><label for="agentModel">Model / deployment</label><input id="agentModel" placeholder="gpt-5.2"><div class="hint">Sent as the request body model value for this agent.</div></div>
             <div class="field"><label for="agentTemperature">Temperature</label><input id="agentTemperature" type="number" min="0" max="2" step="0.05" placeholder="0.2"></div>
           </div>
           <div class="field"><label for="agentPrompt">System prompt</label><textarea id="agentPrompt" required></textarea></div>
@@ -339,16 +339,13 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
           <input type="hidden" id="endpointId">
           <div class="row"><button type="button" id="azurePreset">Azure preset</button><button type="button" id="openAiPreset">OpenAI preset</button></div>
           <div class="field"><label for="endpointName">Name</label><input id="endpointName" required></div>
-          <div class="field"><label for="endpointBaseUrl">Base URL</label><input id="endpointBaseUrl" placeholder="https://apim.example.com/team/openai" required><div class="hint">For Azure/APIM, paste through /openai and put the deployment in Model/Test model. Full request URLs also work.</div></div>
-          <div class="field"><label for="endpointPath">Path override</label><input id="endpointPath" placeholder="/deployments/model/chat/completions or leave blank"></div>
+          <div class="field"><label for="endpointBaseUrl">Base URL</label><input id="endpointBaseUrl" placeholder="https://apim.example.com/team/openai" required><div class="hint">For Cline-style OpenAI compatible APIM, paste through /openai. Full request URLs also work.</div></div>
+          <div class="field"><label for="endpointPath">Path override</label><input id="endpointPath" placeholder="Leave blank, or /deployments/model/chat/completions"></div>
           <div class="grid-2">
             <div class="field"><label for="endpointKind">API kind</label><select id="endpointKind"><option value="chat-completions">Chat completions</option><option value="responses">Responses</option><option value="completions">Completions</option></select></div>
             <div class="field"><label for="endpointAuth">Auth</label><select id="endpointAuth"><option value="bearer">Bearer token</option><option value="api-key">api-key header</option><option value="none">None</option></select></div>
           </div>
-          <div class="grid-2">
-            <div class="field"><label for="endpointStreaming">Streaming</label><select id="endpointStreaming"><option value="false">Off</option><option value="true">On if supported</option></select></div>
-            <div class="field"><label for="endpointTestModel">Test model</label><input id="endpointTestModel" placeholder="optional model/deployment"></div>
-          </div>
+          <div class="field"><label for="endpointStreaming">Streaming</label><select id="endpointStreaming"><option value="false">Off</option><option value="true">On if supported</option></select></div>
           <div class="grid-2">
             <div class="field"><label for="endpointApiVersion">API version</label><input id="endpointApiVersion" placeholder="optional"></div>
             <div class="field"><label for="endpointOrganization">Organization</label><input id="endpointOrganization" placeholder="optional"></div>
@@ -359,7 +356,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
               <input id="endpointApiKey" type="password" placeholder="Saved locally after Save or Test">
               <button type="button" class="icon" id="toggleEndpointApiKey" title="Show saved API key" aria-label="Show saved API key"><span class="codicon codicon-eye"></span></button>
             </div>
-            <div class="hint">Saved in VS Code SecretStorage. Test saves the current key before calling the endpoint.</div>
+            <div class="hint">Saved locally. Test saves the current key before sending hello.</div>
           </div>
           <div class="field"><label for="endpointHeaders">Default headers JSON</label><textarea id="endpointHeaders" placeholder='{"x-custom-header":"value"}'></textarea></div>
           <div class="row"><button class="primary" type="submit"><span class="codicon codicon-save"></span>Save</button><button type="button" id="testEndpoint"><span class="codicon codicon-beaker"></span>Test</button><button type="button" id="deleteEndpoint" class="danger"><span class="codicon codicon-trash"></span>Delete</button></div>
@@ -441,7 +438,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
     $('azurePreset').addEventListener('click', () => {
       $('endpointKind').value = 'chat-completions';
       $('endpointAuth').value = 'api-key';
-      $('endpointApiVersion').value = $('endpointApiVersion').value || '2024-02-15-preview';
+      $('endpointApiVersion').value = $('endpointApiVersion').value || '2024-10-21';
       $('endpointPath').value = '';
     });
     $('openAiPreset').addEventListener('click', () => {
@@ -507,7 +504,6 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
           apiPath: $('endpointPath').value.trim() || undefined,
           authMode: $('endpointAuth').value,
           streaming: $('endpointStreaming').value === 'true',
-          testModel: $('endpointTestModel').value.trim() || undefined,
           apiVersion: $('endpointApiVersion').value.trim() || undefined,
           organization: $('endpointOrganization').value.trim() || undefined,
           defaultHeaders
@@ -628,7 +624,6 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       $('endpointKind').value = endpoint?.apiKind || 'chat-completions';
       $('endpointAuth').value = endpoint?.authMode || 'bearer';
       $('endpointStreaming').value = String(endpoint?.streaming ?? false);
-      $('endpointTestModel').value = endpoint?.testModel || '';
       $('endpointApiVersion').value = endpoint?.apiVersion || '';
       $('endpointOrganization').value = endpoint?.organization || '';
       $('endpointApiKey').value = '';

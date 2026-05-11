@@ -8,17 +8,16 @@ Endpoints support three OpenAI-compatible request styles:
 - `responses`: appends `/responses`.
 - `completions`: appends `/completions`.
 
-Authentication modes are `bearer`, `api-key`, or `none`. API keys are stored in VS Code `SecretStorage` and are not exported.
+Authentication modes are `bearer`, `api-key`, or `none`. API keys are stored in VS Code `SecretStorage` with a plaintext local extension-storage fallback and are not exported.
 
-For APIM/Azure-style OpenAI bases, paste the base URL through `/openai` and leave the path override blank. Potato builds the deployment route from the model/deployment value:
+For OpenAI-compatible APIM/Azure-style bases, paste the base URL through `/openai` and leave the path override blank. Potato then uses the standard OpenAI-compatible route:
 
 ```text
 https://apim.example.com/team/openai
-model/deployment: gpt-5.2
-resolved route: /deployments/gpt-5.2/chat/completions
+resolved route: /chat/completions
 ```
 
-If a gateway requires a different route, use the path override field. If the base URL already includes `/chat/completions`, `/responses`, or `/completions`, Potato uses it as-is.
+If a gateway requires a deployment route, use the path override field, for example `/deployments/gpt-5.2/chat/completions`. If the base URL already includes `/chat/completions`, `/responses`, or `/completions`, Potato uses it as-is.
 
 ## Provider-Neutral Tool Calls
 
