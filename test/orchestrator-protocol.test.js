@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { extractPendingActions, extractToolCalls } = require('../out/actionParser');
+const { resolveEndpointUrl } = require('../out/llmClient');
 const { parseJsonObject } = require('../out/utils');
 
 const agent = {
@@ -41,4 +42,32 @@ test('extractPendingActions creates approval actions', () => {
   assert.equal(actions[0].kind, 'file-edit');
   assert.equal(actions[0].status, 'pending');
   assert.equal(actions[1].kind, 'terminal-command');
+});
+
+test('resolveEndpointUrl builds APIM OpenAI deployment routes', () => {
+  const url = resolveEndpointUrl({
+    id: 'endpoint_1',
+    name: 'APIM',
+    baseUrl: 'https://apim.example.com/gaim99-prod/openai',
+    apiKind: 'chat-completions',
+    authMode: 'api-key',
+    createdAt: 0,
+    updatedAt: 0
+  }, 'gpt-5.2');
+
+  assert.equal(url, 'https://apim.example.com/gaim99-prod/openai/deployments/gpt-5.2/chat/completions');
+});
+
+test('resolveEndpointUrl leaves complete request URLs intact', () => {
+  const url = resolveEndpointUrl({
+    id: 'endpoint_1',
+    name: 'APIM',
+    baseUrl: 'https://apim.example.com/gaim99-prod/openai/deployments/gpt-5.2/chat/completions',
+    apiKind: 'chat-completions',
+    authMode: 'api-key',
+    createdAt: 0,
+    updatedAt: 0
+  }, 'gpt-5.2');
+
+  assert.equal(url, 'https://apim.example.com/gaim99-prod/openai/deployments/gpt-5.2/chat/completions');
 });

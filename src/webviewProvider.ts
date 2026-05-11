@@ -84,6 +84,18 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
         case 'testEndpoint':
           await this.testEndpoint(message.endpointId);
           break;
+        case 'saveAndTestEndpoint':
+          await this.storage.saveEndpoint(message.endpoint, message.apiKey);
+          await this.refresh();
+          await this.testEndpoint(message.endpoint.id);
+          break;
+        case 'loadEndpointKey':
+          this.post({
+            type: 'endpointKey',
+            endpointId: message.endpointId,
+            apiKey: await this.storage.getApiKey(message.endpointId)
+          });
+          break;
         case 'saveEndpoint':
           await this.storage.saveEndpoint(message.endpoint, message.apiKey);
           await this.refresh();

@@ -28,8 +28,12 @@ export class LlmClient {
 
   async callAgent(endpoint: EndpointConfig, request: AgentCallRequest): Promise<AgentCallResult> {
     const apiKey = await this.getApiKey(endpoint.id);
+    if (endpoint.authMode !== 'none' && !apiKey) {
+      throw new Error(`No API key stored for endpoint ${endpoint.name}. Enter an API key and click Save or Test.`);
+    }
+
     const headers = this.buildHeaders(endpoint, apiKey);
-    const url = this.buildUrl(endpoint);
+    const url = this.buildUrl(endpoint, request.agent.model);
     const body = this.createBody(endpoint, request);
     const shouldStream = Boolean(endpoint.streaming || request.stream);
 
@@ -173,34 +177,8 @@ export class LlmClient {
     };
   }
 
-  private buildUrl(endpoint: EndpointConfig): string {
-    const base = cleanBaseUrl(endpoint.baseUrl);
-    const path = this.normalizePath(endpoint.apiPath?.trim() || this.defaultPath(endpoint.apiKind));
-    const completePathPattern = /\/(?:chat\/completions|responses|completions)(?:\?|$)/i;
-    const target = endpoint.apiPath?.trim() || !completePathPattern.test(base) ? `${base}${path}` : base;
-    const url = new URL(target);
-
-    if (endpoint.apiVersion && !url.searchParams.has('api-version')) {
-      url.searchParams.set('api-version', endpoint.apiVersion);
-    }
-
-    return url.toString();
-  }
-
-  private defaultPath(apiKind: EndpointConfig['apiKind']): string {
-    switch (apiKind) {
-      case 'responses':
-        return '/responses';
-      case 'completions':
-        return '/completions';
-      case 'chat-completions':
-      default:
-        return '/chat/completions';
-    }
-  }
-
-  private normalizePath(path: string): string {
-    return path.startsWith('/') ? path : `/${path}`;
+  private buildUrl(endpoint: EndpointConfig, model: string | undefined): string {
+    return resolveEndpointUrl(endpoint, model);
   }
 
   private buildHeaders(endpoint: EndpointConfig, apiKey: string | undefined): HeadersInit {
@@ -344,6 +322,54 @@ export class LlmClient {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
+}
+
+export function resolveEndpointUrl(endpoint: EndpointConfig, model: string | undefined): string {
+  const base = cleanBaseUrl(endpoint.baseUrl);
+  const path = normalizePath(endpoint.apiPath?.trim() || defaultPath(endpoint.apiKind, base, model));
+  const completePathPattern = /\/(?:chat\/completions|responses|completions)(?:\?|$)/i;
+  const target = endpoint.apiPath?.trim() || !completePathPattern.test(base) ? `${base}${path}` : base;
+  const url = new URL(target);
+
+  if (endpoint.apiVersion && !url.searchParams.has('api-version')) {
+    url.searchParams.set('api-version', endpoint.apiVersion);
+  }
+
+  return url.toString();
+}
+
+function defaultPath(apiKind: EndpointConfig['apiKind'], baseUrl: string, model: string | undefined): string {
+  const route = defaultRoute(apiKind);
+  if (shouldUseDeploymentRoute(baseUrl, model)) {
+    return `/deployments/${encodeURIComponent(model ?? '')}${route}`;
+  }
+
+  return route;
+}
+
+function defaultRoute(apiKind: EndpointConfig['apiKind']): string {
+  switch (apiKind) {
+    case 'responses':
+      return '/responses';
+    case 'completions':
+      return '/completions';
+    case 'chat-completions':
+    default:
+      return '/chat/completions';
+  }
+}
+
+function shouldUseDeploymentRoute(baseUrl: string, model: string | undefined): boolean {
+  if (!model) {
+    return false;
+  }
+
+  const path = new URL(baseUrl).pathname.toLowerCase().replace(/\/+$/, '');
+  return path.endsWith('/openai') && !path.includes('/deployments/');
+}
+
+function normalizePath(path: string): string {
+  return path.startsWith('/') ? path : `/${path}`;
 }
 
 function formatFetchError(error: unknown): string {
