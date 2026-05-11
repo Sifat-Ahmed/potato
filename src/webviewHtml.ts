@@ -415,7 +415,10 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
     $('cancelRun').addEventListener('click', () => vscode.postMessage({ type: 'cancelRun' }));
     $('attachFiles').addEventListener('click', () => vscode.postMessage({ type: 'attachFiles' }));
     $('taskInput').addEventListener('keydown', event => {
-      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') runTask();
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        runTask();
+      }
     });
     $('newAgent').addEventListener('click', () => editAgent());
     $('newEndpoint').addEventListener('click', () => editEndpoint());
@@ -608,10 +611,11 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       if ((!text && state.attachments.length === 0) || state.running) return;
       state.running = true;
       state.streamNode = null;
-      $('runTask').disabled = true;
+      setRunButtonLoading(true);
       $('cancelRun').disabled = false;
       $('transcript').innerHTML = '';
       appendMessage('User', text || 'Attached files');
+      $('taskInput').value = '';
       vscode.postMessage({ type: 'runTask', text });
     }
 
@@ -639,8 +643,18 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
 
     function finishRun() {
       state.running = false;
-      $('runTask').disabled = false;
+      setRunButtonLoading(false);
       $('cancelRun').disabled = true;
+    }
+
+    function setRunButtonLoading(loading) {
+      const button = $('runTask');
+      button.disabled = loading;
+      button.title = loading ? 'Running' : 'Run task';
+      button.setAttribute('aria-label', loading ? 'Running' : 'Run task');
+      button.innerHTML = loading
+        ? '<span class="codicon codicon-loading codicon-modifier-spin"></span>'
+        : '<span class="codicon codicon-send"></span>';
     }
 
     function appendMessage(label, body, extraClass) {

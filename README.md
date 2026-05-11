@@ -11,6 +11,7 @@ This extension is intentionally local-first:
 - File edits and terminal commands proposed by agents require explicit approval.
 - Configuration import/export intentionally excludes API keys.
 - Chat attachments use the VS Code file picker, support all file types, and cap embedded file content before sending it to a model.
+- Chat run errors are shown in the transcript. Press Enter to send and Shift+Enter for a new line.
 
 ## Development
 

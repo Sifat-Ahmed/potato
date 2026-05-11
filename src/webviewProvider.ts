@@ -121,8 +121,12 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
           break;
       }
     } catch (error) {
-      this.output.appendLine(`Webview message failed: ${asErrorMessage(error)}`);
-      this.post({ type: 'notice', level: 'error', message: asErrorMessage(error) });
+      const messageText = asErrorMessage(error);
+      this.output.appendLine(`Webview message failed: ${messageText}`);
+      if (message.type === 'runTask') {
+        this.post({ type: 'runUpdate', update: { kind: 'error', message: messageText } });
+      }
+      this.post({ type: 'notice', level: 'error', message: messageText });
     }
   }
 
@@ -141,46 +145,66 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
       updates
     };
 
-    this.post({ type: 'notice', level: 'info', message: 'Run started.' });
-    const state = await this.storage.getState();
-    const workspaceContext = await createWorkspaceContext();
-    const attachmentContext = createAttachmentContext(this.attachments);
-    const userTask = trimmed || 'Use the attached files as the user input and respond with the most relevant help.';
-    const input = `${userTask}\n\n${attachmentContext}\n\n${workspaceContext}`;
-    const runtime = new OrchestratorRuntime(
-      new LlmClient(endpointId => this.storage.getApiKey(endpointId)),
-      update => {
-        updates.push(update);
-        this.post({ type: 'runUpdate', update });
-        if (update.kind === 'action-proposal') {
-          void this.refresh();
+    try {
+      this.post({ type: 'notice', level: 'info', message: 'Run started.' });
+      const state = await this.storage.getState();
+      const workspaceContext = await createWorkspaceContext();
+      const attachmentContext = createAttachmentContext(this.attachments);
+      const userTask = trimmed || 'Use the attached files as the user input and respond with the most relevant help.';
+      const input = `${userTask}\n\n${attachmentContext}\n\n${workspaceContext}`;
+      const runtime = new OrchestratorRuntime(
+        new LlmClient(endpointId => this.storage.getApiKey(endpointId)),
+        update => {
+          updates.push(update);
+          this.post({ type: 'runUpdate', update });
+          if (update.kind === 'action-proposal') {
+            void this.refresh();
+          }
+        },
+        new ToolRunner(),
+        async actions => {
+          await this.storage.addPendingActions(actions);
         }
-      },
-      new ToolRunner(),
-      async actions => {
-        await this.storage.addPendingActions(actions);
+      );
+
+      await runtime.run(input, state.endpoints, state.agents, controller.signal);
+    } catch (error) {
+      const update: OrchestratorRunUpdate = {
+        kind: 'error',
+        message: asErrorMessage(error)
+      };
+      updates.push(update);
+      this.post({ type: 'runUpdate', update });
+    } finally {
+      const activeRun = this.activeRun;
+      if (!activeRun) {
+        return;
       }
-    );
 
-    await runtime.run(input, state.endpoints, state.agents, controller.signal);
-    const status = updates.some(update => update.kind === 'cancelled')
-      ? 'cancelled'
-      : updates.some(update => update.kind === 'error')
-        ? 'failed'
-        : 'completed';
+      const status = updates.some(update => update.kind === 'cancelled')
+        ? 'cancelled'
+        : updates.some(update => update.kind === 'error')
+          ? 'failed'
+          : 'completed';
 
-    const entry: RunHistoryEntry = {
-      id: createId('run'),
-      userText: this.activeRun.userText,
-      status,
-      startedAt: this.activeRun.startedAt,
-      finishedAt: Date.now(),
-      updates
-    };
-    await this.storage.addRunHistory(entry);
-    this.activeRun = undefined;
-    this.attachments = [];
-    await this.refresh();
+      const entry: RunHistoryEntry = {
+        id: createId('run'),
+        userText: activeRun.userText,
+        status,
+        startedAt: activeRun.startedAt,
+        finishedAt: Date.now(),
+        updates
+      };
+      this.activeRun = undefined;
+      this.attachments = [];
+      try {
+        await this.storage.addRunHistory(entry);
+      } catch (error) {
+        this.output.appendLine(`Failed to persist run history: ${asErrorMessage(error)}`);
+        this.post({ type: 'notice', level: 'warning', message: `Run completed, but history was not saved: ${asErrorMessage(error)}` });
+      }
+      await this.refresh();
+    }
   }
 
   private cancelRun(): void {
