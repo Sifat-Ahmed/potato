@@ -166,6 +166,8 @@ export type WebviewToExtensionMessage =
   | { type: 'removeAttachment'; attachmentId: string }
   | { type: 'clearAttachments' }
   | { type: 'testEndpoint'; endpointId: string }
+  | { type: 'saveAndTestEndpoint'; endpoint: Omit<EndpointConfig, 'createdAt' | 'updatedAt'>; apiKey?: string }
+  | { type: 'loadEndpointKey'; endpointId: string }
   | { type: 'saveEndpoint'; endpoint: Omit<EndpointConfig, 'createdAt' | 'updatedAt'>; apiKey?: string }
   | { type: 'deleteEndpoint'; endpointId: string }
   | { type: 'saveAgent'; agent: Omit<AgentConfig, 'createdAt' | 'updatedAt'> }
@@ -179,5 +181,6 @@ export type WebviewToExtensionMessage =
 export type ExtensionToWebviewMessage =
   | { type: 'state'; state: PublicState }
   | { type: 'attachments'; attachments: ChatAttachment[] }
+  | { type: 'endpointKey'; endpointId: string; apiKey?: string }
   | { type: 'runUpdate'; update: OrchestratorRunUpdate }
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string };

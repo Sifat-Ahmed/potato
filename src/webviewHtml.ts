@@ -164,6 +164,12 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       gap: 8px;
       align-items: end;
     }
+    .secret-row {
+      display: grid;
+      grid-template-columns: 1fr 30px;
+      gap: 8px;
+      align-items: center;
+    }
     .composer textarea {
       min-height: 104px;
       max-height: 220px;
@@ -333,8 +339,8 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
           <input type="hidden" id="endpointId">
           <div class="row"><button type="button" id="azurePreset">Azure preset</button><button type="button" id="openAiPreset">OpenAI preset</button></div>
           <div class="field"><label for="endpointName">Name</label><input id="endpointName" required></div>
-          <div class="field"><label for="endpointBaseUrl">Base URL</label><input id="endpointBaseUrl" placeholder="https://host.example.com/v1" required><div class="hint">The extension appends the selected route unless the URL already includes one.</div></div>
-          <div class="field"><label for="endpointPath">Path override</label><input id="endpointPath" placeholder="/chat/completions, /responses, or /completions"></div>
+          <div class="field"><label for="endpointBaseUrl">Base URL</label><input id="endpointBaseUrl" placeholder="https://apim.example.com/team/openai" required><div class="hint">For Azure/APIM, paste through /openai and put the deployment in Model/Test model. Full request URLs also work.</div></div>
+          <div class="field"><label for="endpointPath">Path override</label><input id="endpointPath" placeholder="/deployments/model/chat/completions or leave blank"></div>
           <div class="grid-2">
             <div class="field"><label for="endpointKind">API kind</label><select id="endpointKind"><option value="chat-completions">Chat completions</option><option value="responses">Responses</option><option value="completions">Completions</option></select></div>
             <div class="field"><label for="endpointAuth">Auth</label><select id="endpointAuth"><option value="bearer">Bearer token</option><option value="api-key">api-key header</option><option value="none">None</option></select></div>
@@ -347,7 +353,14 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
             <div class="field"><label for="endpointApiVersion">API version</label><input id="endpointApiVersion" placeholder="optional"></div>
             <div class="field"><label for="endpointOrganization">Organization</label><input id="endpointOrganization" placeholder="optional"></div>
           </div>
-          <div class="field"><label for="endpointApiKey">API key</label><input id="endpointApiKey" type="password" placeholder="Leave blank to keep existing key"></div>
+          <div class="field">
+            <label for="endpointApiKey">API key</label>
+            <div class="secret-row">
+              <input id="endpointApiKey" type="password" placeholder="Saved locally after Save or Test">
+              <button type="button" class="icon" id="toggleEndpointApiKey" title="Show saved API key" aria-label="Show saved API key"><span class="codicon codicon-eye"></span></button>
+            </div>
+            <div class="hint">Saved in VS Code SecretStorage. Test saves the current key before calling the endpoint.</div>
+          </div>
           <div class="field"><label for="endpointHeaders">Default headers JSON</label><textarea id="endpointHeaders" placeholder='{"x-custom-header":"value"}'></textarea></div>
           <div class="row"><button class="primary" type="submit"><span class="codicon codicon-save"></span>Save</button><button type="button" id="testEndpoint"><span class="codicon codicon-beaker"></span>Test</button><button type="button" id="deleteEndpoint" class="danger"><span class="codicon codicon-trash"></span>Delete</button></div>
         </form>
@@ -383,6 +396,9 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       if (message.type === 'attachments') {
         state.attachments = message.attachments || [];
         renderAttachments();
+      }
+      if (message.type === 'endpointKey') {
+        handleEndpointKey(message);
       }
       if (message.type === 'runUpdate') appendRunUpdate(message.update);
       if (message.type === 'notice') showNotice(message.message, message.level);
@@ -426,18 +442,20 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       $('endpointKind').value = 'chat-completions';
       $('endpointAuth').value = 'api-key';
       $('endpointApiVersion').value = $('endpointApiVersion').value || '2024-02-15-preview';
-      $('endpointPath').value = $('endpointPath').value || '/chat/completions';
+      $('endpointPath').value = '';
     });
     $('openAiPreset').addEventListener('click', () => {
       $('endpointKind').value = 'chat-completions';
       $('endpointAuth').value = 'bearer';
-      $('endpointPath').value = $('endpointPath').value || '/chat/completions';
+      $('endpointPath').value = '';
     });
     $('testEndpoint').addEventListener('click', () => {
-      const endpointId = $('endpointId').value;
-      if (endpointId) vscode.postMessage({ type: 'testEndpoint', endpointId });
-      else showNotice('Save the endpoint before testing.', 'warning');
+      const payload = readEndpointForm();
+      if (!payload) return;
+      vscode.postMessage({ type: 'saveAndTestEndpoint', endpoint: payload.endpoint, apiKey: payload.apiKey });
+      $('endpointId').value = payload.endpoint.id;
     });
+    $('toggleEndpointApiKey').addEventListener('click', () => toggleEndpointApiKey());
     $('deleteAgent').addEventListener('click', () => {
       const agentId = $('agentId').value;
       if (agentId) vscode.postMessage({ type: 'deleteAgent', agentId });
@@ -465,27 +483,38 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
 
     $('endpointForm').addEventListener('submit', event => {
       event.preventDefault();
+      const payload = readEndpointForm();
+      if (!payload) return;
+      vscode.postMessage({ type: 'saveEndpoint', endpoint: payload.endpoint, apiKey: payload.apiKey });
+      $('endpointId').value = payload.endpoint.id;
+    });
+
+    function readEndpointForm() {
+      if (!$('endpointForm').reportValidity()) return undefined;
       let defaultHeaders;
       const headersText = $('endpointHeaders').value.trim();
       if (headersText) {
         try { defaultHeaders = JSON.parse(headersText); }
         catch { showNotice('Default headers must be valid JSON.', 'error'); return; }
       }
-      vscode.postMessage({ type: 'saveEndpoint', endpoint: {
-        id: $('endpointId').value || createId('endpoint'),
-        name: $('endpointName').value.trim(),
-        baseUrl: $('endpointBaseUrl').value.trim(),
-        apiKind: $('endpointKind').value,
-        apiPath: $('endpointPath').value.trim() || undefined,
-        authMode: $('endpointAuth').value,
-        streaming: $('endpointStreaming').value === 'true',
-        testModel: $('endpointTestModel').value.trim() || undefined,
-        apiVersion: $('endpointApiVersion').value.trim() || undefined,
-        organization: $('endpointOrganization').value.trim() || undefined,
-        defaultHeaders
-      }, apiKey: $('endpointApiKey').value });
-      $('endpointApiKey').value = '';
-    });
+
+      return {
+        endpoint: {
+          id: $('endpointId').value || createId('endpoint'),
+          name: $('endpointName').value.trim(),
+          baseUrl: $('endpointBaseUrl').value.trim(),
+          apiKind: $('endpointKind').value,
+          apiPath: $('endpointPath').value.trim() || undefined,
+          authMode: $('endpointAuth').value,
+          streaming: $('endpointStreaming').value === 'true',
+          testModel: $('endpointTestModel').value.trim() || undefined,
+          apiVersion: $('endpointApiVersion').value.trim() || undefined,
+          organization: $('endpointOrganization').value.trim() || undefined,
+          defaultHeaders
+        },
+        apiKey: $('endpointApiKey').value
+      };
+    }
 
     function setTab(tab) {
       state.activeTab = tab;
@@ -603,7 +632,46 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       $('endpointApiVersion').value = endpoint?.apiVersion || '';
       $('endpointOrganization').value = endpoint?.organization || '';
       $('endpointApiKey').value = '';
+      $('endpointApiKey').type = 'password';
+      $('endpointApiKey').placeholder = endpoint?.hasApiKey ? 'Saved key available' : 'Saved locally after Save or Test';
+      setEndpointEyeIcon(false);
       $('endpointHeaders').value = endpoint?.defaultHeaders ? JSON.stringify(endpoint.defaultHeaders, null, 2) : '';
+    }
+
+    function toggleEndpointApiKey() {
+      const input = $('endpointApiKey');
+      const shouldShow = input.type === 'password';
+      if (!shouldShow) {
+        input.type = 'password';
+        setEndpointEyeIcon(false);
+        return;
+      }
+
+      input.type = 'text';
+      setEndpointEyeIcon(true);
+      if (!input.value && $('endpointId').value) {
+        vscode.postMessage({ type: 'loadEndpointKey', endpointId: $('endpointId').value });
+      }
+    }
+
+    function handleEndpointKey(message) {
+      if (message.endpointId !== $('endpointId').value) return;
+      if (!message.apiKey) {
+        showNotice('No saved API key for this endpoint.', 'warning');
+        return;
+      }
+
+      $('endpointApiKey').value = message.apiKey;
+      $('endpointApiKey').type = 'text';
+      setEndpointEyeIcon(true);
+    }
+
+    function setEndpointEyeIcon(visible) {
+      $('toggleEndpointApiKey').innerHTML = visible
+        ? '<span class="codicon codicon-eye-closed"></span>'
+        : '<span class="codicon codicon-eye"></span>';
+      $('toggleEndpointApiKey').title = visible ? 'Hide API key' : 'Show saved API key';
+      $('toggleEndpointApiKey').setAttribute('aria-label', visible ? 'Hide API key' : 'Show saved API key');
     }
 
     function runTask() {
