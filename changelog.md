@@ -10,4 +10,4 @@
 - Added provider-neutral JSON tool calls for web search, file listing, file reading, and workspace search.
 - Added config import/export without API keys.
 - Added Azure/OpenAI endpoint presets in the endpoint form.
-- Added local VSIX packaging script.
+- Added local VSIX packaging script and source-build troubleshooting for missing `out/extension.js`.
