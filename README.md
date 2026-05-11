@@ -4,7 +4,7 @@ A personal VS Code extension for coordinating private OpenAI-compatible endpoint
 
 This extension is intentionally local-first:
 
-- Endpoint API keys are stored locally in VS Code SecretStorage and can be revealed from the endpoint form when needed.
+- Endpoint API keys are stored locally in VS Code SecretStorage with a plaintext extension-storage fallback and can be revealed from the endpoint form when needed.
 - Agent and endpoint metadata are stored in VS Code global state.
 - Chat Completions, Responses, and legacy Completions style endpoints are supported.
 - It is not prepared for Marketplace publishing.
@@ -12,7 +12,7 @@ This extension is intentionally local-first:
 - Configuration import/export intentionally excludes API keys.
 - Chat attachments use the VS Code file picker, support all file types, and cap embedded file content before sending it to a model.
 - Chat run errors are shown in the transcript. Press Enter to send and Shift+Enter for a new line.
-- For APIM/Azure-style OpenAI URLs, paste the endpoint base through `/openai` and put the deployment name in the model field; Potato builds the `/deployments/{model}/...` route.
+- For OpenAI-compatible APIM/Azure-style URLs, paste the endpoint base through `/openai`; Potato uses the standard `/chat/completions` route like Cline unless you add a path override.
 
 ## Development
 

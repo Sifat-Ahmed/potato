@@ -4,6 +4,7 @@ import { createStarterAgents } from './starterData';
 
 const STATE_KEY = 'orchestrator.state.v1';
 const SECRET_PREFIX = 'orchestrator.endpointKey.';
+const LOCAL_KEY_FILE = 'endpoint-keys.local.json';
 
 export class OrchestratorStorage {
   constructor(private readonly context: vscode.ExtensionContext) {}
@@ -66,6 +67,7 @@ export class OrchestratorStorage {
       const trimmed = apiKey.trim();
       if (trimmed.length > 0) {
         await this.context.secrets.store(this.secretKey(endpoint.id), trimmed);
+        await this.saveLocalApiKey(endpoint.id, trimmed);
       }
     }
   }
@@ -79,6 +81,7 @@ export class OrchestratorStorage {
       )
     });
     await this.context.secrets.delete(this.secretKey(endpointId));
+    await this.deleteLocalApiKey(endpointId);
   }
 
   async saveAgent(agent: Omit<AgentConfig, 'createdAt' | 'updatedAt'>): Promise<void> {
@@ -173,7 +176,8 @@ export class OrchestratorStorage {
   }
 
   async getApiKey(endpointId: string): Promise<string | undefined> {
-    return this.context.secrets.get(this.secretKey(endpointId));
+    const secretKey = await this.context.secrets.get(this.secretKey(endpointId));
+    return secretKey ?? this.getLocalApiKey(endpointId);
   }
 
   private async saveState(state: PersistedState): Promise<void> {
@@ -182,5 +186,39 @@ export class OrchestratorStorage {
 
   private secretKey(endpointId: string): string {
     return `${SECRET_PREFIX}${endpointId}`;
+  }
+
+  private async getLocalApiKey(endpointId: string): Promise<string | undefined> {
+    const keys = await this.readLocalApiKeys();
+    return keys[endpointId];
+  }
+
+  private async saveLocalApiKey(endpointId: string, apiKey: string): Promise<void> {
+    const keys = await this.readLocalApiKeys();
+    keys[endpointId] = apiKey;
+    await this.writeLocalApiKeys(keys);
+  }
+
+  private async deleteLocalApiKey(endpointId: string): Promise<void> {
+    const keys = await this.readLocalApiKeys();
+    delete keys[endpointId];
+    await this.writeLocalApiKeys(keys);
+  }
+
+  private async readLocalApiKeys(): Promise<Record<string, string>> {
+    const uri = vscode.Uri.joinPath(this.context.globalStorageUri, LOCAL_KEY_FILE);
+    try {
+      const bytes = await vscode.workspace.fs.readFile(uri);
+      const parsed = JSON.parse(Buffer.from(bytes).toString('utf8')) as unknown;
+      return parsed && typeof parsed === 'object' ? parsed as Record<string, string> : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private async writeLocalApiKeys(keys: Record<string, string>): Promise<void> {
+    await vscode.workspace.fs.createDirectory(this.context.globalStorageUri);
+    const uri = vscode.Uri.joinPath(this.context.globalStorageUri, LOCAL_KEY_FILE);
+    await vscode.workspace.fs.writeFile(uri, Buffer.from(JSON.stringify(keys, null, 2), 'utf8'));
   }
 }

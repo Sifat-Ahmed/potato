@@ -87,13 +87,13 @@ export class LlmClient {
         role: 'custom',
         endpointId: endpoint.id,
         model,
-        systemPrompt: 'Reply with the single word OK.',
+        systemPrompt: 'You are a connectivity test. Reply briefly.',
         temperature: 0,
         enabled: true,
         createdAt: Date.now(),
         updatedAt: Date.now()
       },
-      input: 'Reply with OK if this endpoint is reachable.',
+      input: 'hello',
       abortSignal
     });
   }
@@ -195,7 +195,7 @@ export class LlmClient {
       headers.authorization = `Bearer ${apiKey}`;
     }
 
-    if (endpoint.authMode === 'api-key' && apiKey) {
+    if ((endpoint.authMode === 'api-key' || endpoint.apiVersion) && apiKey) {
       headers['api-key'] = apiKey;
     }
 
@@ -326,7 +326,7 @@ function isAbortError(error: unknown): boolean {
 
 export function resolveEndpointUrl(endpoint: EndpointConfig, model: string | undefined): string {
   const base = cleanBaseUrl(endpoint.baseUrl);
-  const path = normalizePath(endpoint.apiPath?.trim() || defaultPath(endpoint.apiKind, base, model));
+  const path = normalizePath(endpoint.apiPath?.trim() || defaultRoute(endpoint.apiKind));
   const completePathPattern = /\/(?:chat\/completions|responses|completions)(?:\?|$)/i;
   const target = endpoint.apiPath?.trim() || !completePathPattern.test(base) ? `${base}${path}` : base;
   const url = new URL(target);
@@ -336,15 +336,6 @@ export function resolveEndpointUrl(endpoint: EndpointConfig, model: string | und
   }
 
   return url.toString();
-}
-
-function defaultPath(apiKind: EndpointConfig['apiKind'], baseUrl: string, model: string | undefined): string {
-  const route = defaultRoute(apiKind);
-  if (shouldUseDeploymentRoute(baseUrl, model)) {
-    return `/deployments/${encodeURIComponent(model ?? '')}${route}`;
-  }
-
-  return route;
 }
 
 function defaultRoute(apiKind: EndpointConfig['apiKind']): string {
@@ -357,15 +348,6 @@ function defaultRoute(apiKind: EndpointConfig['apiKind']): string {
     default:
       return '/chat/completions';
   }
-}
-
-function shouldUseDeploymentRoute(baseUrl: string, model: string | undefined): boolean {
-  if (!model) {
-    return false;
-  }
-
-  const path = new URL(baseUrl).pathname.toLowerCase().replace(/\/+$/, '');
-  return path.endsWith('/openai') && !path.includes('/deployments/');
 }
 
 function normalizePath(path: string): string {

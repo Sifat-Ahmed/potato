@@ -44,7 +44,7 @@ test('extractPendingActions creates approval actions', () => {
   assert.equal(actions[1].kind, 'terminal-command');
 });
 
-test('resolveEndpointUrl builds APIM OpenAI deployment routes', () => {
+test('resolveEndpointUrl builds OpenAI-compatible APIM chat routes', () => {
   const url = resolveEndpointUrl({
     id: 'endpoint_1',
     name: 'APIM',
@@ -55,7 +55,38 @@ test('resolveEndpointUrl builds APIM OpenAI deployment routes', () => {
     updatedAt: 0
   }, 'gpt-5.2');
 
-  assert.equal(url, 'https://apim.example.com/gaim99-prod/openai/deployments/gpt-5.2/chat/completions');
+  assert.equal(url, 'https://apim.example.com/gaim99-prod/openai/chat/completions');
+});
+
+test('resolveEndpointUrl adds Azure API version to compatible chat routes', () => {
+  const url = resolveEndpointUrl({
+    id: 'endpoint_1',
+    name: 'APIM',
+    baseUrl: 'https://apim.example.com/gaim99-prod/openai',
+    apiKind: 'chat-completions',
+    authMode: 'api-key',
+    apiVersion: '2024-10-21',
+    createdAt: 0,
+    updatedAt: 0
+  }, 'gpt-5.2');
+
+  assert.equal(url, 'https://apim.example.com/gaim99-prod/openai/chat/completions?api-version=2024-10-21');
+});
+
+test('resolveEndpointUrl supports explicit deployment path overrides', () => {
+  const url = resolveEndpointUrl({
+    id: 'endpoint_1',
+    name: 'APIM',
+    baseUrl: 'https://apim.example.com/gaim99-prod/openai',
+    apiKind: 'chat-completions',
+    apiPath: '/deployments/gpt-5.2/chat/completions',
+    authMode: 'api-key',
+    apiVersion: '2024-10-21',
+    createdAt: 0,
+    updatedAt: 0
+  }, 'gpt-5.2');
+
+  assert.equal(url, 'https://apim.example.com/gaim99-prod/openai/deployments/gpt-5.2/chat/completions?api-version=2024-10-21');
 });
 
 test('resolveEndpointUrl leaves complete request URLs intact', () => {
