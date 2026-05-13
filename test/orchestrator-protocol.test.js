@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { extractPendingActions, extractToolCalls } = require('../out/actionParser');
-const { createResponsesRequestBody, resolveEndpointUrl } = require('../out/llmClient');
+const { createEffectiveAgentConfig, createResponsesRequestBody, resolveEndpointUrl } = require('../out/llmClient');
 const { parseJsonObject } = require('../out/utils');
 
 const agent = {
@@ -124,6 +124,29 @@ test('createResponsesRequestBody maps Codex reasoning config', () => {
     instructions: 'You are concise.',
     reasoning: { effort: 'medium' }
   });
+});
+
+test('createEffectiveAgentConfig prefers endpoint model settings', () => {
+  const effective = createEffectiveAgentConfig({
+    id: 'endpoint_1',
+    name: 'Endpoint',
+    baseUrl: 'https://apim.example.com/openai',
+    model: 'gpt-5.1-codex',
+    apiKind: 'responses',
+    authMode: 'api-key',
+    reasoningEffort: 'medium',
+    createdAt: 0,
+    updatedAt: 0
+  }, {
+    ...agent,
+    model: 'old-agent-model',
+    reasoningEffort: 'low',
+    temperature: 0.2
+  });
+
+  assert.equal(effective.model, 'gpt-5.1-codex');
+  assert.equal(effective.reasoningEffort, 'medium');
+  assert.equal(effective.temperature, 0.2);
 });
 
 test('resolveEndpointUrl supports explicit deployment path overrides', () => {

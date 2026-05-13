@@ -12,12 +12,16 @@ export class OrchestratorStorage {
   async getState(): Promise<PersistedState> {
     const state = this.context.globalState.get<PersistedState>(STATE_KEY);
     if (state) {
-      return {
+      const normalized = normalizeState({
         endpoints: Array.isArray(state.endpoints) ? state.endpoints : [],
         agents: Array.isArray(state.agents) ? state.agents : [],
         pendingActions: Array.isArray(state.pendingActions) ? state.pendingActions : [],
         runHistory: Array.isArray(state.runHistory) ? state.runHistory : []
-      };
+      });
+      if (normalized.changed) {
+        await this.saveState(normalized.state);
+      }
+      return normalized.state;
     }
 
     const starterState: PersistedState = {
@@ -169,12 +173,13 @@ export class OrchestratorStorage {
 
   async importState(imported: Partial<PersistedState>): Promise<void> {
     const state = await this.getState();
-    await this.saveState({
+    const normalized = normalizeState({
       endpoints: Array.isArray(imported.endpoints) ? imported.endpoints : state.endpoints,
       agents: Array.isArray(imported.agents) ? imported.agents : state.agents,
       pendingActions: Array.isArray(imported.pendingActions) ? imported.pendingActions : state.pendingActions ?? [],
       runHistory: Array.isArray(imported.runHistory) ? imported.runHistory : state.runHistory ?? []
     });
+    await this.saveState(normalized.state);
   }
 
   async getApiKey(endpointId: string): Promise<string | undefined> {
@@ -223,4 +228,35 @@ export class OrchestratorStorage {
     const uri = vscode.Uri.joinPath(this.context.globalStorageUri, LOCAL_KEY_FILE);
     await vscode.workspace.fs.writeFile(uri, Buffer.from(JSON.stringify(keys, null, 2), 'utf8'));
   }
+}
+
+function normalizeState(state: PersistedState): { state: PersistedState; changed: boolean } {
+  let changed = false;
+  const endpoints = state.endpoints.map(endpoint => {
+    if (endpoint.model) {
+      return endpoint;
+    }
+
+    const assignedAgent = state.agents.find(agent => agent.endpointId === endpoint.id && agent.model);
+    const model = endpoint.testModel || assignedAgent?.model;
+    if (!model) {
+      return endpoint;
+    }
+
+    changed = true;
+    return {
+      ...endpoint,
+      model,
+      reasoningEffort: endpoint.reasoningEffort ?? assignedAgent?.reasoningEffort,
+      temperature: endpoint.temperature ?? assignedAgent?.temperature
+    };
+  });
+
+  return {
+    changed,
+    state: {
+      ...state,
+      endpoints
+    }
+  };
 }

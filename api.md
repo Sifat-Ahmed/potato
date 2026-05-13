@@ -10,6 +10,14 @@ Endpoints support three OpenAI-compatible request styles:
 
 Authentication modes are `bearer`, `api-key`, or `none`. API keys are stored in VS Code `SecretStorage` with a plaintext local extension-storage fallback and are not exported.
 
+Endpoint records own model execution settings:
+
+- `model`: request body model/deployment value.
+- `reasoningEffort`: optional Responses `reasoning.effort`.
+- `temperature`: optional request temperature.
+
+Agents only choose a role, endpoint, enabled state, and system prompt. The assigned endpoint supplies the model.
+
 For OpenAI-compatible APIM/Azure-style bases, paste the base URL through `/openai` and leave the path override blank. Potato then uses the standard OpenAI-compatible route:
 
 ```text
@@ -27,11 +35,13 @@ API kind: responses
 auth: api-key
 API version: 2025-04-01-preview
 resolved route: /responses?api-version=2025-04-01-preview
-agent model: gpt-5.1-codex
-agent reasoning effort: medium
+endpoint model: gpt-5.1-codex
+endpoint reasoning effort: medium
 ```
 
-Potato maps the agent system prompt to the Responses `instructions` field, sends the user request as `input`, sends `reasoning.effort` when configured, and omits `temperature` for Codex/GPT-5/o-series Responses calls.
+Potato maps the agent system prompt to the Responses `instructions` field, sends the user request as `input`, sends endpoint `reasoning.effort` when configured, and omits `temperature` for Codex/GPT-5/o-series Responses calls.
+
+Endpoint Test saves the current form and API key, sends `hello` to the endpoint model, and displays the resolved URL plus the raw success or error response in the endpoint form.
 
 ## Provider-Neutral Tool Calls
 

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { extractPendingActions, extractToolCalls } from './actionParser';
-import { LlmClient } from './llmClient';
+import { createEffectiveAgentConfig, LlmClient } from './llmClient';
 import { ToolRunner } from './toolRunner';
 import { AgentCallResult, AgentConfig, DelegationTask, EndpointConfig, OrchestratorRunUpdate, PendingAction } from './types';
 import { asErrorMessage, parseJsonObject } from './utils';
@@ -26,8 +26,8 @@ export class OrchestratorRuntime {
       return;
     }
 
-    if (!manager.endpointId || !manager.model) {
-      this.emit({ kind: 'error', message: `Assign an endpoint and model to ${manager.name} before running a task.` });
+    if (!manager.endpointId) {
+      this.emit({ kind: 'error', message: `Assign an endpoint to ${manager.name} before running a task.` });
       return;
     }
 
@@ -37,13 +37,17 @@ export class OrchestratorRuntime {
       this.emit({ kind: 'error', message: `Endpoint for ${manager.name} was not found.` });
       return;
     }
+    if (!createEffectiveAgentConfig(managerEndpoint, manager).model) {
+      this.emit({ kind: 'error', message: `Set a model/deployment on endpoint ${managerEndpoint.name} before running ${manager.name}.` });
+      return;
+    }
 
     try {
       this.emit({ kind: 'status', message: `${manager.name} is creating a plan.` });
 
       const autoDelegate = vscode.workspace.getConfiguration('orchestrator').get<boolean>('autoDelegate', true);
       const delegationTasks = autoDelegate
-        ? await this.createDelegationPlan(taskText, manager, managerEndpoint, enabledAgents, abortSignal)
+        ? await this.createDelegationPlan(taskText, manager, managerEndpoint, enabledAgents, endpointMap, abortSignal)
         : [];
 
       if (delegationTasks.length === 0) {
@@ -76,10 +80,14 @@ export class OrchestratorRuntime {
     manager: AgentConfig,
     endpoint: EndpointConfig,
     agents: AgentConfig[],
+    endpointMap: Map<string, EndpointConfig>,
     abortSignal?: AbortSignal
   ): Promise<DelegationTask[]> {
     const availableAgents = agents
-      .filter(agent => agent.id !== manager.id && agent.endpointId && agent.model)
+      .filter(agent => {
+        const agentEndpoint = agent.endpointId ? endpointMap.get(agent.endpointId) : undefined;
+        return agent.id !== manager.id && agentEndpoint && createEffectiveAgentConfig(agentEndpoint, agent).model;
+      })
       .map(agent => ({
         id: agent.id,
         name: agent.name,
