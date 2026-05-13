@@ -25,7 +25,7 @@ https://apim.example.com/team/openai
 resolved route: /chat/completions
 ```
 
-If a gateway requires a deployment route, use the path override field, for example `/deployments/gpt-5.2/chat/completions`. If the base URL already includes `/chat/completions`, `/responses`, or `/completions`, Potato uses it as-is.
+If a gateway requires a deployment route, use the path override field, for example `/deployments/gpt-5.2/chat/completions` or `/deployments/gpt-5.2/completions`. If the base URL already includes `/chat/completions`, `/responses`, or `/completions`, Potato uses it as-is.
 
 For Codex-style Azure Responses configs, use:
 
@@ -42,6 +42,33 @@ endpoint reasoning effort: medium
 Potato maps the agent system prompt to the Responses `instructions` field, sends the user request as `input`, sends endpoint `reasoning.effort` when configured, and omits `temperature` for Codex/GPT-5/o-series Responses calls.
 
 Endpoint Test saves the current form and API key, sends `hello` to the endpoint model, and displays the resolved URL plus the raw success or error response in the endpoint form.
+
+## Manager Delegation
+
+Delegation is controlled by the `orchestrator.autoDelegate` setting and is enabled by default.
+
+At run time Potato:
+
+1. Picks the enabled `manager` agent, or the first enabled agent if no manager exists.
+2. Finds every other enabled agent that has an assigned endpoint with a model/deployment.
+3. Asks the manager for a JSON delegation plan:
+
+```json
+{
+  "tasks": [
+    {
+      "agentId": "agent id from the available list",
+      "title": "short title",
+      "instructions": "specific task instructions"
+    }
+  ]
+}
+```
+
+4. Calls those specialist agents in parallel, up to `orchestrator.maxParallelAgents`.
+5. Sends the specialist results back to the manager for final synthesis.
+
+The live chat transcript only shows `Thinking...` while this happens, then the final manager response. Detailed plan, status, tool, and agent-result updates remain in local run history for debugging.
 
 ## Provider-Neutral Tool Calls
 

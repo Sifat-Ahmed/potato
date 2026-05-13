@@ -241,6 +241,7 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
       overflow-wrap: anywhere;
     }
     .message.final { border-left-color: var(--accent); }
+    .message.thinking { color: var(--muted); }
     .message.error { border-left-color: var(--danger); color: var(--danger); }
     .test-result {
       display: none;
@@ -364,7 +365,7 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
           <div class="field"><label for="endpointName">Name</label><input id="endpointName" required></div>
           <div class="field"><label for="endpointModel">Model / deployment</label><input id="endpointModel" placeholder="gpt-5.1-codex" required><div class="hint">Endpoint Test and assigned agents use this request body model value.</div></div>
           <div class="field"><label for="endpointBaseUrl">Base URL</label><input id="endpointBaseUrl" placeholder="https://apim.example.com/team/openai" required><div class="hint">For Cline-style OpenAI compatible APIM, paste through /openai. Full request URLs also work.</div></div>
-          <div class="field"><label for="endpointPath">Path override</label><input id="endpointPath" placeholder="Leave blank, or /deployments/model/chat/completions"></div>
+          <div class="field"><label for="endpointPath">Path override</label><input id="endpointPath" placeholder="Leave blank, /deployments/model/chat/completions, or /deployments/model/completions"></div>
           <div class="grid-2">
             <div class="field"><label for="endpointKind">API kind</label><select id="endpointKind"><option value="chat-completions">Chat completions</option><option value="responses">Responses</option><option value="completions">Completions</option></select></div>
             <div class="field"><label for="endpointAuth">Auth</label><select id="endpointAuth"><option value="bearer">Bearer token</option><option value="api-key">api-key header</option><option value="none">None</option></select></div>
@@ -414,7 +415,7 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
   <script nonce="${nonce}">
     const vscode = window.__potatoVsCode || acquireVsCodeApi();
     window.__potatoVsCode = vscode;
-    const state = { endpoints: [], agents: [], pendingActions: [], runHistory: [], conversations: [], activeConversation: undefined, attachments: [], activeTab: 'chat', running: false, streamNode: null };
+    const state = { endpoints: [], agents: [], pendingActions: [], runHistory: [], conversations: [], activeConversation: undefined, attachments: [], activeTab: 'chat', running: false, streamNode: null, thinkingNode: null };
     const missingElementIds = new Set();
     const missingElement = {
       hidden: true,
@@ -590,7 +591,7 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
       const headersText = $('endpointHeaders').value.trim();
       if (headersText) {
         try { defaultHeaders = JSON.parse(headersText); }
-        catch { showNotice('Default headers must be valid JSON.', 'error'); return; }
+        catch (error) { showNotice('Default headers must be valid JSON.', 'error'); return; }
       }
 
       return {
@@ -839,9 +840,11 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
       if ((!text && state.attachments.length === 0) || state.running) return;
       state.running = true;
       state.streamNode = null;
+      state.thinkingNode = null;
       setRunButtonLoading(true);
       $('cancelRun').disabled = false;
       appendMessage('User', text || 'Attached files');
+      state.thinkingNode = appendMessage('Potato', 'Thinking...', 'thinking');
       $('taskInput').value = '';
       vscode.postMessage({ type: 'runTask', text });
     }
@@ -852,26 +855,52 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
         return;
       }
       state.streamNode = null;
-      if (update.kind === 'status') appendMessage('Status', update.message);
-      else if (update.kind === 'plan') appendMessage('Plan', update.message);
-      else if (update.kind === 'tool-result') appendMessage('Tool', update.message);
-      else if (update.kind === 'action-proposal') appendMessage('Action', update.message);
-      else if (update.kind === 'agent-result') appendMessage(update.result && update.result.agentName || 'Agent', update.message);
-      else if (update.kind === 'final') { appendMessage('Manager', update.message, 'final'); finishRun(); }
-      else if (update.kind === 'cancelled') { appendMessage('Cancelled', update.message, 'error'); finishRun(); }
-      else if (update.kind === 'error') { appendMessage('Error', update.message, 'error'); finishRun(); }
+      if (update.kind === 'status' || update.kind === 'plan' || update.kind === 'tool-result' || update.kind === 'action-proposal' || update.kind === 'agent-result') return;
+      if (update.kind === 'final') {
+        removeThinking();
+        if (state.streamNode) {
+          state.streamNode.className = 'message final';
+          state.streamNode.querySelector('.message-label').textContent = 'Manager';
+          if (!state.streamNode.querySelector('.message-body').textContent.trim()) {
+            state.streamNode.querySelector('.message-body').textContent = update.message;
+          }
+        } else {
+          appendMessage('Manager', update.message, 'final');
+        }
+        finishRun();
+      }
+      else if (update.kind === 'cancelled') { removeThinking(); appendMessage('Cancelled', update.message, 'error'); finishRun(); }
+      else if (update.kind === 'error') { removeThinking(); appendMessage('Error', update.message, 'error'); finishRun(); }
     }
 
     function appendToken(token) {
-      if (!state.streamNode) state.streamNode = appendMessage('Streaming', '', 'final');
+      if (!state.streamNode) {
+        if (state.thinkingNode) {
+          state.streamNode = state.thinkingNode;
+          state.thinkingNode = null;
+          state.streamNode.className = 'message final';
+          state.streamNode.querySelector('.message-label').textContent = 'Manager';
+          state.streamNode.querySelector('.message-body').textContent = '';
+        } else {
+          state.streamNode = appendMessage('Manager', '', 'final');
+        }
+      }
       state.streamNode.querySelector('.message-body').textContent += token;
       state.streamNode.scrollIntoView({ block: 'end' });
     }
 
     function finishRun() {
       state.running = false;
+      state.thinkingNode = null;
       setRunButtonLoading(false);
       $('cancelRun').disabled = true;
+    }
+
+    function removeThinking() {
+      if (state.thinkingNode && state.thinkingNode.parentNode) {
+        state.thinkingNode.parentNode.removeChild(state.thinkingNode);
+      }
+      state.thinkingNode = null;
     }
 
     function setRunButtonLoading(loading) {
