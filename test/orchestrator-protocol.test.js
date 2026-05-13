@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { extractPendingActions, extractToolCalls } = require('../out/actionParser');
-const { resolveEndpointUrl } = require('../out/llmClient');
+const { createResponsesRequestBody, resolveEndpointUrl } = require('../out/llmClient');
 const { parseJsonObject } = require('../out/utils');
 
 const agent = {
@@ -75,6 +75,55 @@ test('resolveEndpointUrl adds Azure API version to compatible chat routes', () =
   }, 'gpt-5.2');
 
   assert.equal(url, 'https://apim.example.com/gaim99-prod/openai/chat/completions?api-version=2024-10-21');
+});
+
+test('resolveEndpointUrl builds Azure Responses preview routes', () => {
+  const url = resolveEndpointUrl({
+    id: 'endpoint_1',
+    name: 'APIM Responses',
+    baseUrl: 'https://apim.example.com/gaim99-prod/openai/',
+    apiKind: 'responses',
+    authMode: 'api-key',
+    apiVersion: '2025-04-01-preview',
+    createdAt: 0,
+    updatedAt: 0
+  }, 'gpt-5.1-codex');
+
+  assert.equal(url, 'https://apim.example.com/gaim99-prod/openai/responses?api-version=2025-04-01-preview');
+});
+
+test('resolveEndpointUrl builds Azure Responses v1 routes', () => {
+  const url = resolveEndpointUrl({
+    id: 'endpoint_1',
+    name: 'Azure Responses v1',
+    baseUrl: 'https://aoai.example.com/openai/v1/',
+    apiKind: 'responses',
+    authMode: 'api-key',
+    createdAt: 0,
+    updatedAt: 0
+  }, 'gpt-5.1-codex');
+
+  assert.equal(url, 'https://aoai.example.com/openai/v1/responses');
+});
+
+test('createResponsesRequestBody maps Codex reasoning config', () => {
+  const body = createResponsesRequestBody({
+    agent: {
+      ...agent,
+      model: 'gpt-5.1-codex',
+      reasoningEffort: 'medium',
+      systemPrompt: 'You are concise.',
+      temperature: 0.2
+    },
+    input: 'hello'
+  });
+
+  assert.deepEqual(body, {
+    model: 'gpt-5.1-codex',
+    input: 'hello',
+    instructions: 'You are concise.',
+    reasoning: { effort: 'medium' }
+  });
 });
 
 test('resolveEndpointUrl supports explicit deployment path overrides', () => {
