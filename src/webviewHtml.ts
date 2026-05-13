@@ -1,10 +1,10 @@
-export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource: string): string {
+export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string, nonce: string, cspSource: string): string {
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} data:; font-src ${cspSource}; style-src ${cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} data:; font-src ${cspSource}; style-src ${cspSource} 'nonce-${nonce}'; script-src ${cspSource} 'nonce-${nonce}';">
   <link href="${codiconsUri}" rel="stylesheet">
   <title>Potato</title>
   <style nonce="${nonce}">
@@ -410,8 +410,10 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
   </div>
   <div class="notice" id="notice"></div>
 
+  <script nonce="${nonce}" src="${fallbackScriptUri}"></script>
   <script nonce="${nonce}">
-    const vscode = acquireVsCodeApi();
+    const vscode = window.__potatoVsCode || acquireVsCodeApi();
+    window.__potatoVsCode = vscode;
     const state = { endpoints: [], agents: [], pendingActions: [], runHistory: [], conversations: [], activeConversation: undefined, attachments: [], activeTab: 'chat', running: false, streamNode: null };
     const missingElementIds = new Set();
     const missingElement = {
@@ -938,6 +940,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
     }
 
     initializeWebview();
+    window.__potatoMainReady = true;
   </script>
 </body>
 </html>`;

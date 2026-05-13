@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 
 const { extractPendingActions, extractToolCalls } = require('../out/actionParser');
@@ -181,15 +183,18 @@ test('resolveEndpointUrl leaves complete request URLs intact', () => {
 });
 
 test('rendered webview keeps startup script compatible with VS Code webviews', () => {
-  const html = renderWebviewHtml('codicons.css', 'nonce', 'vscode-resource:');
+  const html = renderWebviewHtml('codicons.css', 'fallback.js', 'nonce', 'vscode-resource:');
+  const fallbackScript = fs.readFileSync(path.join(__dirname, '..', 'media', 'webviewFallback.js'), 'utf8');
 
   assert.equal(/\?\.|\?\?/.test(html), false);
+  assert.equal(/=>|\bconst\b|\blet\b|\?\.|\?\?/.test(fallbackScript), false);
+  assert.match(html, /src="fallback\.js"/);
   assert.match(html, /initializeWebview\(\);/);
   assert.match(html, /type: 'webviewError'/);
 });
 
 test('rendered webview includes required interactive controls', () => {
-  const html = renderWebviewHtml('codicons.css', 'nonce', 'vscode-resource:');
+  const html = renderWebviewHtml('codicons.css', 'fallback.js', 'nonce', 'vscode-resource:');
   const requiredIds = [
     'historyButton',
     'menuButton',
