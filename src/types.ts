@@ -204,6 +204,7 @@ export interface PublicState {
 
 export type WebviewToExtensionMessage =
   | { type: 'ready' }
+  | { type: 'webviewError'; message: string }
   | { type: 'runTask'; text: string }
   | { type: 'cancelRun' }
   | { type: 'attachFiles' }

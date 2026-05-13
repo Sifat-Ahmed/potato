@@ -87,6 +87,9 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
         case 'ready':
           await this.refresh();
           break;
+        case 'webviewError':
+          this.output.appendLine(`Potato webview error: ${message.message}`);
+          break;
         case 'runTask':
           await this.runTask(message.text);
           break;

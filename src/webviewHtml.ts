@@ -413,125 +413,174 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const state = { endpoints: [], agents: [], pendingActions: [], runHistory: [], conversations: [], activeConversation: undefined, attachments: [], activeTab: 'chat', running: false, streamNode: null };
-    const $ = (id) => document.getElementById(id);
+    const missingElementIds = new Set();
+    const missingElement = {
+      hidden: true,
+      value: '',
+      textContent: '',
+      innerHTML: '',
+      className: '',
+      disabled: false,
+      type: '',
+      title: '',
+      dataset: {},
+      classList: { toggle: () => {}, add: () => {}, remove: () => {} },
+      setAttribute: () => {},
+      addEventListener: () => {},
+      querySelectorAll: () => [],
+      querySelector: () => null,
+      appendChild: () => {},
+      scrollIntoView: () => {},
+      reportValidity: () => false
+    };
+    const $ = (id) => {
+      const node = document.getElementById(id);
+      if (node) return node;
+      if (!missingElementIds.has(id)) {
+        missingElementIds.add(id);
+        reportWebviewError('Missing Potato webview element #' + id);
+      }
+      return missingElement;
+    };
+
+    window.addEventListener('error', event => {
+      reportWebviewError(event.message || event.error || 'Unknown webview script error');
+    });
+    window.addEventListener('unhandledrejection', event => {
+      reportWebviewError(event.reason || 'Unhandled webview promise rejection');
+    });
 
     window.addEventListener('message', event => {
-      const message = event.data;
-      if (message.type === 'state') {
-        state.endpoints = message.state.endpoints || [];
-        state.agents = message.state.agents || [];
-        state.pendingActions = message.state.pendingActions || [];
-        state.runHistory = message.state.runHistory || [];
-        state.conversations = message.state.conversations || [];
-        state.activeConversation = message.state.activeConversation;
-        renderAll();
+      try {
+        const message = event.data;
+        if (message.type === 'state') {
+          state.endpoints = message.state.endpoints || [];
+          state.agents = message.state.agents || [];
+          state.pendingActions = message.state.pendingActions || [];
+          state.runHistory = message.state.runHistory || [];
+          state.conversations = message.state.conversations || [];
+          state.activeConversation = message.state.activeConversation;
+          renderAll();
+        }
+        if (message.type === 'attachments') {
+          state.attachments = message.attachments || [];
+          renderAttachments();
+        }
+        if (message.type === 'endpointKey') {
+          handleEndpointKey(message);
+        }
+        if (message.type === 'endpointTestResult') {
+          handleEndpointTestResult(message);
+        }
+        if (message.type === 'runUpdate') appendRunUpdate(message.update);
+        if (message.type === 'notice') showNotice(message.message, message.level);
+      } catch (error) {
+        reportWebviewError(error);
       }
-      if (message.type === 'attachments') {
-        state.attachments = message.attachments || [];
-        renderAttachments();
-      }
-      if (message.type === 'endpointKey') {
-        handleEndpointKey(message);
-      }
-      if (message.type === 'endpointTestResult') {
-        handleEndpointTestResult(message);
-      }
-      if (message.type === 'runUpdate') appendRunUpdate(message.update);
-      if (message.type === 'notice') showNotice(message.message, message.level);
     });
 
-    document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => {
-      setTab(button.dataset.tab);
-      closeMenu();
-    }));
-    $('historyButton').addEventListener('click', () => {
-      setTab('history');
-      closeMenu();
-    });
-    $('menuButton').addEventListener('click', event => {
-      event.stopPropagation();
-      toggleMenu();
-    });
-    document.addEventListener('click', event => {
-      if (!$('settingsMenu').hidden && !event.target.closest('#settingsMenu') && !event.target.closest('#menuButton')) {
-        closeMenu();
-      }
-    });
-    document.addEventListener('keydown', event => {
-      if (event.key === 'Escape') closeMenu();
-    });
-    $('refresh').addEventListener('click', () => vscode.postMessage({ type: 'ready' }));
-    $('importConfig').addEventListener('click', () => vscode.postMessage({ type: 'importConfig' }));
-    $('exportConfig').addEventListener('click', () => vscode.postMessage({ type: 'exportConfig' }));
-    $('newConversation').addEventListener('click', () => {
-      vscode.postMessage({ type: 'newConversation' });
-      setTab('chat');
-    });
-    $('runTask').addEventListener('click', runTask);
-    $('cancelRun').addEventListener('click', () => vscode.postMessage({ type: 'cancelRun' }));
-    $('attachFiles').addEventListener('click', () => vscode.postMessage({ type: 'attachFiles' }));
-    $('taskInput').addEventListener('keydown', event => {
-      if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault();
-        runTask();
-      }
-    });
-    $('newAgent').addEventListener('click', () => editAgent());
-    $('newEndpoint').addEventListener('click', () => editEndpoint());
-    $('azurePreset').addEventListener('click', () => {
-      $('endpointKind').value = 'chat-completions';
-      $('endpointAuth').value = 'api-key';
-      $('endpointApiVersion').value = $('endpointApiVersion').value || '2024-10-21';
-      $('endpointPath').value = '';
-    });
-    $('azureResponsesPreset').addEventListener('click', () => {
-      $('endpointKind').value = 'responses';
-      $('endpointAuth').value = 'api-key';
-      $('endpointApiVersion').value = $('endpointApiVersion').value || '2025-04-01-preview';
-      $('endpointPath').value = '';
-    });
-    $('openAiPreset').addEventListener('click', () => {
-      $('endpointKind').value = 'chat-completions';
-      $('endpointAuth').value = 'bearer';
-      $('endpointPath').value = '';
-    });
-    $('testEndpoint').addEventListener('click', () => {
-      const payload = readEndpointForm();
-      if (!payload) return;
-      vscode.postMessage({ type: 'saveAndTestEndpoint', endpoint: payload.endpoint, apiKey: payload.apiKey });
-      $('endpointId').value = payload.endpoint.id;
-    });
-    $('toggleEndpointApiKey').addEventListener('click', () => toggleEndpointApiKey());
-    $('deleteAgent').addEventListener('click', () => {
-      const agentId = $('agentId').value;
-      if (agentId) vscode.postMessage({ type: 'deleteAgent', agentId });
-      editAgent();
-    });
-    $('deleteEndpoint').addEventListener('click', () => {
-      const endpointId = $('endpointId').value;
-      if (endpointId) vscode.postMessage({ type: 'deleteEndpoint', endpointId });
-      editEndpoint();
-    });
+    function initializeWebview() {
+      try {
+        document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => {
+          setTab(button.dataset.tab);
+          closeMenu();
+        }));
+        $('historyButton').addEventListener('click', () => {
+          setTab('history');
+          closeMenu();
+        });
+        $('menuButton').addEventListener('click', event => {
+          event.stopPropagation();
+          toggleMenu();
+        });
+        document.addEventListener('click', event => {
+          const target = event.target;
+          const closest = target && target.closest ? target.closest.bind(target) : () => null;
+          if (!$('settingsMenu').hidden && !closest('#settingsMenu') && !closest('#menuButton')) {
+            closeMenu();
+          }
+        });
+        document.addEventListener('keydown', event => {
+          if (event.key === 'Escape') closeMenu();
+        });
+        $('refresh').addEventListener('click', () => vscode.postMessage({ type: 'ready' }));
+        $('importConfig').addEventListener('click', () => vscode.postMessage({ type: 'importConfig' }));
+        $('exportConfig').addEventListener('click', () => vscode.postMessage({ type: 'exportConfig' }));
+        $('newConversation').addEventListener('click', () => {
+          vscode.postMessage({ type: 'newConversation' });
+          setTab('chat');
+        });
+        $('runTask').addEventListener('click', runTask);
+        $('cancelRun').addEventListener('click', () => vscode.postMessage({ type: 'cancelRun' }));
+        $('attachFiles').addEventListener('click', () => vscode.postMessage({ type: 'attachFiles' }));
+        $('taskInput').addEventListener('keydown', event => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            runTask();
+          }
+        });
+        $('newAgent').addEventListener('click', () => editAgent());
+        $('newEndpoint').addEventListener('click', () => editEndpoint());
+        $('azurePreset').addEventListener('click', () => {
+          $('endpointKind').value = 'chat-completions';
+          $('endpointAuth').value = 'api-key';
+          $('endpointApiVersion').value = $('endpointApiVersion').value || '2024-10-21';
+          $('endpointPath').value = '';
+        });
+        $('azureResponsesPreset').addEventListener('click', () => {
+          $('endpointKind').value = 'responses';
+          $('endpointAuth').value = 'api-key';
+          $('endpointApiVersion').value = $('endpointApiVersion').value || '2025-04-01-preview';
+          $('endpointPath').value = '';
+        });
+        $('openAiPreset').addEventListener('click', () => {
+          $('endpointKind').value = 'chat-completions';
+          $('endpointAuth').value = 'bearer';
+          $('endpointPath').value = '';
+        });
+        $('testEndpoint').addEventListener('click', () => {
+          const payload = readEndpointForm();
+          if (!payload) return;
+          vscode.postMessage({ type: 'saveAndTestEndpoint', endpoint: payload.endpoint, apiKey: payload.apiKey });
+          $('endpointId').value = payload.endpoint.id;
+        });
+        $('toggleEndpointApiKey').addEventListener('click', () => toggleEndpointApiKey());
+        $('deleteAgent').addEventListener('click', () => {
+          const agentId = $('agentId').value;
+          if (agentId) vscode.postMessage({ type: 'deleteAgent', agentId });
+          editAgent();
+        });
+        $('deleteEndpoint').addEventListener('click', () => {
+          const endpointId = $('endpointId').value;
+          if (endpointId) vscode.postMessage({ type: 'deleteEndpoint', endpointId });
+          editEndpoint();
+        });
 
-    $('agentForm').addEventListener('submit', event => {
-      event.preventDefault();
-      vscode.postMessage({ type: 'saveAgent', agent: {
-        id: $('agentId').value || createId('agent'),
-        name: $('agentName').value.trim(),
-        role: $('agentRole').value,
-        endpointId: $('agentEndpoint').value || undefined,
-        systemPrompt: $('agentPrompt').value.trim(),
-        enabled: $('agentEnabled').value === 'true'
-      }});
-    });
+        $('agentForm').addEventListener('submit', event => {
+          event.preventDefault();
+          vscode.postMessage({ type: 'saveAgent', agent: {
+            id: $('agentId').value || createId('agent'),
+            name: $('agentName').value.trim(),
+            role: $('agentRole').value,
+            endpointId: $('agentEndpoint').value || undefined,
+            systemPrompt: $('agentPrompt').value.trim(),
+            enabled: $('agentEnabled').value === 'true'
+          }});
+        });
 
-    $('endpointForm').addEventListener('submit', event => {
-      event.preventDefault();
-      const payload = readEndpointForm();
-      if (!payload) return;
-      vscode.postMessage({ type: 'saveEndpoint', endpoint: payload.endpoint, apiKey: payload.apiKey });
-      $('endpointId').value = payload.endpoint.id;
-    });
+        $('endpointForm').addEventListener('submit', event => {
+          event.preventDefault();
+          const payload = readEndpointForm();
+          if (!payload) return;
+          vscode.postMessage({ type: 'saveEndpoint', endpoint: payload.endpoint, apiKey: payload.apiKey });
+          $('endpointId').value = payload.endpoint.id;
+        });
+      } catch (error) {
+        reportWebviewError(error);
+      } finally {
+        vscode.postMessage({ type: 'ready' });
+      }
+    }
 
     function readEndpointForm() {
       if (!$('endpointForm').reportValidity()) return undefined;
@@ -627,7 +676,11 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       const list = $('actionList');
       if (!state.pendingActions.length) { list.innerHTML = '<div class="empty">No proposed actions yet.</div>'; return; }
       list.innerHTML = state.pendingActions.map(action => {
-        const detail = action.kind === 'file-edit' ? action.fileEdit?.path : action.kind === 'file-delete' ? action.fileDelete?.path : action.terminalCommand?.command;
+        const detail = action.kind === 'file-edit'
+          ? (action.fileEdit && action.fileEdit.path)
+          : action.kind === 'file-delete'
+            ? (action.fileDelete && action.fileDelete.path)
+            : (action.terminalCommand && action.terminalCommand.command);
         const buttons = action.status === 'pending' ? '<div class="row"><button class="primary" data-apply="' + escapeHtml(action.id) + '"><span class="codicon codicon-check"></span>Apply</button><button class="danger" data-reject="' + escapeHtml(action.id) + '"><span class="codicon codicon-close"></span>Reject</button></div>' : '';
         return '<div class="item"><div class="row split"><span class="item-title">' + escapeHtml(action.title) + '</span><span class="badge">' + escapeHtml(action.status) + '</span></div><div class="meta">' + escapeHtml(action.kind) + ' · ' + escapeHtml(action.sourceAgentName || 'agent') + '</div><div class="message">' + escapeHtml(detail || '') + '</div>' + (action.result ? '<div class="meta">' + escapeHtml(action.result) + '</div>' : '') + buttons + '</div>';
       }).join('');
@@ -639,7 +692,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       const list = $('conversationList');
       if (!state.conversations.length) { list.innerHTML = '<div class="empty">No conversations yet.</div>'; return; }
       list.innerHTML = state.conversations.map(conversation =>
-        '<div class="item ' + (state.activeConversation?.id === conversation.id ? 'active' : '') + '">' +
+        '<div class="item ' + (state.activeConversation && state.activeConversation.id === conversation.id ? 'active' : '') + '">' +
           '<button class="conversation-open" data-conversation-id="' + escapeHtml(conversation.id) + '">' +
             '<div class="row split"><span class="item-title">' + escapeHtml(conversation.title) + '</span><span class="badge">' + escapeHtml(String(conversation.messageCount)) + '</span></div>' +
             '<div class="meta">' + new Date(conversation.updatedAt).toLocaleString() + '</div>' +
@@ -666,7 +719,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
     function renderConversation() {
       const transcript = $('transcript');
       transcript.innerHTML = '';
-      const messages = state.activeConversation?.messages || [];
+      const messages = state.activeConversation && state.activeConversation.messages || [];
       if (!messages.length) {
         transcript.innerHTML = '<div class="empty">Configure an endpoint, assign it to the manager, then run a task.</div>';
         return;
@@ -692,32 +745,32 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
     }
 
     function editAgent(agent) {
-      $('agentId').value = agent?.id || '';
-      $('agentName').value = agent?.name || '';
-      $('agentRole').value = agent?.role || 'custom';
-      $('agentEnabled').value = String(agent?.enabled ?? true);
-      $('agentEndpoint').value = agent?.endpointId || '';
-      $('agentPrompt').value = agent?.systemPrompt || '';
+      $('agentId').value = agent && agent.id || '';
+      $('agentName').value = agent && agent.name || '';
+      $('agentRole').value = agent && agent.role || 'custom';
+      $('agentEnabled').value = String(agent && agent.enabled !== undefined ? agent.enabled : true);
+      $('agentEndpoint').value = agent && agent.endpointId || '';
+      $('agentPrompt').value = agent && agent.systemPrompt || '';
     }
 
     function editEndpoint(endpoint) {
-      $('endpointId').value = endpoint?.id || '';
-      $('endpointName').value = endpoint?.name || '';
-      $('endpointModel').value = endpoint?.model || endpoint?.testModel || '';
-      $('endpointBaseUrl').value = endpoint?.baseUrl || '';
-      $('endpointPath').value = endpoint?.apiPath || '';
-      $('endpointKind').value = endpoint?.apiKind || 'chat-completions';
-      $('endpointAuth').value = endpoint?.authMode || 'bearer';
-      $('endpointStreaming').value = String(endpoint?.streaming ?? false);
-      $('endpointReasoningEffort').value = endpoint?.reasoningEffort || '';
-      $('endpointTemperature').value = endpoint?.temperature ?? '';
-      $('endpointApiVersion').value = endpoint?.apiVersion || '';
-      $('endpointOrganization').value = endpoint?.organization || '';
+      $('endpointId').value = endpoint && endpoint.id || '';
+      $('endpointName').value = endpoint && endpoint.name || '';
+      $('endpointModel').value = endpoint && (endpoint.model || endpoint.testModel) || '';
+      $('endpointBaseUrl').value = endpoint && endpoint.baseUrl || '';
+      $('endpointPath').value = endpoint && endpoint.apiPath || '';
+      $('endpointKind').value = endpoint && endpoint.apiKind || 'chat-completions';
+      $('endpointAuth').value = endpoint && endpoint.authMode || 'bearer';
+      $('endpointStreaming').value = String(endpoint && endpoint.streaming !== undefined ? endpoint.streaming : false);
+      $('endpointReasoningEffort').value = endpoint && endpoint.reasoningEffort || '';
+      $('endpointTemperature').value = endpoint && endpoint.temperature !== undefined ? endpoint.temperature : '';
+      $('endpointApiVersion').value = endpoint && endpoint.apiVersion || '';
+      $('endpointOrganization').value = endpoint && endpoint.organization || '';
       $('endpointApiKey').value = '';
       $('endpointApiKey').type = 'password';
-      $('endpointApiKey').placeholder = endpoint?.hasApiKey ? 'Saved key available' : 'Saved locally after Save or Test';
+      $('endpointApiKey').placeholder = endpoint && endpoint.hasApiKey ? 'Saved key available' : 'Saved locally after Save or Test';
       setEndpointEyeIcon(false);
-      $('endpointHeaders').value = endpoint?.defaultHeaders ? JSON.stringify(endpoint.defaultHeaders, null, 2) : '';
+      $('endpointHeaders').value = endpoint && endpoint.defaultHeaders ? JSON.stringify(endpoint.defaultHeaders, null, 2) : '';
       clearEndpointTestResult();
     }
 
@@ -801,7 +854,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       else if (update.kind === 'plan') appendMessage('Plan', update.message);
       else if (update.kind === 'tool-result') appendMessage('Tool', update.message);
       else if (update.kind === 'action-proposal') appendMessage('Action', update.message);
-      else if (update.kind === 'agent-result') appendMessage(update.result?.agentName || 'Agent', update.message);
+      else if (update.kind === 'agent-result') appendMessage(update.result && update.result.agentName || 'Agent', update.message);
       else if (update.kind === 'final') { appendMessage('Manager', update.message, 'final'); finishRun(); }
       else if (update.kind === 'cancelled') { appendMessage('Cancelled', update.message, 'error'); finishRun(); }
       else if (update.kind === 'error') { appendMessage('Error', update.message, 'error'); finishRun(); }
@@ -867,10 +920,24 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       return (value / (1024 * 1024)).toFixed(1) + ' MB';
     }
     function escapeHtml(value) {
-      return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+      return String(value === undefined || value === null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 
-    vscode.postMessage({ type: 'ready' });
+    function reportWebviewError(error) {
+      const message = error && error.message ? error.message : String(error || 'Unknown webview error');
+      const summary = document.getElementById('summary');
+      const notice = document.getElementById('notice');
+      if (summary) summary.textContent = 'Webview error';
+      if (notice) {
+        notice.textContent = message;
+        notice.className = 'notice show error';
+      }
+      try {
+        vscode.postMessage({ type: 'webviewError', message });
+      } catch (_error) {}
+    }
+
+    initializeWebview();
   </script>
 </body>
 </html>`;

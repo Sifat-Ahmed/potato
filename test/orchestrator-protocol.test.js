@@ -4,6 +4,7 @@ const test = require('node:test');
 const { extractPendingActions, extractToolCalls } = require('../out/actionParser');
 const { createEffectiveAgentConfig, createResponsesRequestBody, resolveEndpointUrl } = require('../out/llmClient');
 const { parseJsonObject } = require('../out/utils');
+const { renderWebviewHtml } = require('../out/webviewHtml');
 
 const agent = {
   id: 'agent_1',
@@ -177,4 +178,35 @@ test('resolveEndpointUrl leaves complete request URLs intact', () => {
   }, 'gpt-5.2');
 
   assert.equal(url, 'https://apim.example.com/gaim99-prod/openai/deployments/gpt-5.2/chat/completions');
+});
+
+test('rendered webview keeps startup script compatible with VS Code webviews', () => {
+  const html = renderWebviewHtml('codicons.css', 'nonce', 'vscode-resource:');
+
+  assert.equal(/\?\.|\?\?/.test(html), false);
+  assert.match(html, /initializeWebview\(\);/);
+  assert.match(html, /type: 'webviewError'/);
+});
+
+test('rendered webview includes required interactive controls', () => {
+  const html = renderWebviewHtml('codicons.css', 'nonce', 'vscode-resource:');
+  const requiredIds = [
+    'historyButton',
+    'menuButton',
+    'settingsMenu',
+    'taskInput',
+    'runTask',
+    'attachFiles',
+    'newConversation',
+    'newAgent',
+    'newEndpoint',
+    'agentForm',
+    'endpointForm',
+    'testEndpoint',
+    'toggleEndpointApiKey'
+  ];
+
+  for (const id of requiredIds) {
+    assert.match(html, new RegExp('id="' + id + '"'));
+  }
 });
