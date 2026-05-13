@@ -19,6 +19,20 @@ resolved route: /chat/completions
 
 If a gateway requires a deployment route, use the path override field, for example `/deployments/gpt-5.2/chat/completions`. If the base URL already includes `/chat/completions`, `/responses`, or `/completions`, Potato uses it as-is.
 
+For Codex-style Azure Responses configs, use:
+
+```text
+base URL: https://apim.example.com/team/openai/
+API kind: responses
+auth: api-key
+API version: 2025-04-01-preview
+resolved route: /responses?api-version=2025-04-01-preview
+agent model: gpt-5.1-codex
+agent reasoning effort: medium
+```
+
+Potato maps the agent system prompt to the Responses `instructions` field, sends the user request as `input`, sends `reasoning.effort` when configured, and omits `temperature` for Codex/GPT-5/o-series Responses calls.
+
 ## Provider-Neutral Tool Calls
 
 Models that do not support native function calling can request local tools by returning only valid JSON:

@@ -26,6 +26,7 @@ export interface AgentConfig {
   role: AgentRole;
   endpointId?: string;
   model?: string;
+  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high';
   systemPrompt: string;
   temperature?: number;
   enabled: boolean;

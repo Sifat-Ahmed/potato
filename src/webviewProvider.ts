@@ -273,7 +273,10 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
       throw new Error('Endpoint not found.');
     }
 
-    const model = endpoint.testModel || state.agents.find(agent => agent.endpointId === endpointId && agent.model)?.model || 'gpt-5.2';
+    const model = endpoint.testModel || state.agents.find(agent => agent.endpointId === endpointId && agent.model)?.model;
+    if (!model) {
+      throw new Error('Assign this endpoint to an agent and set that agent model before testing.');
+    }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);

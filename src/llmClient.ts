@@ -236,15 +236,7 @@ export class LlmClient {
   }
 
   private createResponsesBody(request: AgentCallRequest): unknown {
-    const messages = this.createMessages(request);
-    return {
-      model: request.agent.model,
-      input: messages.map(message => ({
-        role: message.role,
-        content: message.content
-      })),
-      temperature: request.agent.temperature
-    };
+    return createResponsesRequestBody(request);
   }
 
   private extractText(endpoint: EndpointConfig, raw: unknown): string {
@@ -256,20 +248,7 @@ export class LlmClient {
   }
 
   private createMessages(request: AgentCallRequest): ChatMessage[] {
-    if (request.messages?.length) {
-      return request.messages;
-    }
-
-    return [
-      {
-        role: 'system',
-        content: request.agent.systemPrompt
-      },
-      {
-        role: 'user',
-        content: request.input
-      }
-    ];
+    return createRequestMessages(request);
   }
 
   private extractChatCompletionsText(raw: unknown): string {
@@ -336,6 +315,74 @@ export function resolveEndpointUrl(endpoint: EndpointConfig, model: string | und
   }
 
   return url.toString();
+}
+
+export function createResponsesRequestBody(request: AgentCallRequest): Record<string, unknown> {
+  const messages = createRequestMessages(request);
+  const instructions = messages
+    .filter(message => message.role === 'system')
+    .map(message => message.content)
+    .join('\n\n')
+    .trim();
+  const inputMessages = messages
+    .filter(message => message.role !== 'system')
+    .map(message => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: message.content
+    }));
+
+  const body: Record<string, unknown> = {
+    model: request.agent.model,
+    input: inputMessages.length === 0
+      ? request.input
+      : inputMessages.length === 1 && inputMessages[0].role === 'user'
+        ? inputMessages[0].content
+        : inputMessages
+  };
+
+  if (instructions) {
+    body.instructions = instructions;
+  }
+
+  if (request.agent.reasoningEffort) {
+    body.reasoning = { effort: request.agent.reasoningEffort };
+  }
+
+  if (shouldSendResponsesTemperature(request.agent.model, request.agent.reasoningEffort, request.agent.temperature)) {
+    body.temperature = request.agent.temperature;
+  }
+
+  return body;
+}
+
+function createRequestMessages(request: AgentCallRequest): ChatMessage[] {
+  if (request.messages?.length) {
+    return request.messages;
+  }
+
+  return [
+    {
+      role: 'system',
+      content: request.agent.systemPrompt
+    },
+    {
+      role: 'user',
+      content: request.input
+    }
+  ];
+}
+
+function shouldSendResponsesTemperature(
+  model: string | undefined,
+  reasoningEffort: AgentCallRequest['agent']['reasoningEffort'],
+  temperature: number | undefined
+): boolean {
+  if (temperature === undefined || reasoningEffort) {
+    return false;
+  }
+
+  const normalized = model?.toLowerCase() ?? '';
+  return !normalized.includes('codex') && !normalized.startsWith('gpt-5') && !/^o\d/.test(normalized);
 }
 
 function defaultRoute(apiKind: EndpointConfig['apiKind']): string {

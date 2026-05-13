@@ -114,6 +114,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
     .stack { display: grid; gap: 10px; }
     .row { display: flex; align-items: center; gap: 8px; }
     .row > * { min-width: 0; }
+    .row.wrap { flex-wrap: wrap; }
     .row.split { justify-content: space-between; }
     .field { display: grid; gap: 5px; }
     .field label, .hint, .meta { color: var(--muted); font-size: 12px; }
@@ -338,6 +339,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
             <div class="field"><label for="agentModel">Model / deployment</label><input id="agentModel" placeholder="gpt-5.2"><div class="hint">Sent as the request body model value for this agent.</div></div>
             <div class="field"><label for="agentTemperature">Temperature</label><input id="agentTemperature" type="number" min="0" max="2" step="0.05" placeholder="0.2"></div>
           </div>
+          <div class="field"><label for="agentReasoningEffort">Reasoning effort</label><select id="agentReasoningEffort"><option value="">Default</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select><div class="hint">For Responses models such as Codex/GPT-5. When set, Potato sends reasoning.effort and omits temperature.</div></div>
           <div class="field"><label for="agentPrompt">System prompt</label><textarea id="agentPrompt" required></textarea></div>
           <div class="row"><button class="primary" type="submit"><span class="codicon codicon-save"></span>Save</button><button type="button" id="deleteAgent" class="danger"><span class="codicon codicon-trash"></span>Delete</button></div>
         </form>
@@ -351,7 +353,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
         <div class="stack" id="endpointList"></div>
         <form class="stack item" id="endpointForm">
           <input type="hidden" id="endpointId">
-          <div class="row"><button type="button" id="azurePreset">Azure preset</button><button type="button" id="openAiPreset">OpenAI preset</button></div>
+          <div class="row wrap"><button type="button" id="azurePreset">Azure chat preset</button><button type="button" id="azureResponsesPreset">Azure Responses preset</button><button type="button" id="openAiPreset">OpenAI preset</button></div>
           <div class="field"><label for="endpointName">Name</label><input id="endpointName" required></div>
           <div class="field"><label for="endpointBaseUrl">Base URL</label><input id="endpointBaseUrl" placeholder="https://apim.example.com/team/openai" required><div class="hint">For Cline-style OpenAI compatible APIM, paste through /openai. Full request URLs also work.</div></div>
           <div class="field"><label for="endpointPath">Path override</label><input id="endpointPath" placeholder="Leave blank, or /deployments/model/chat/completions"></div>
@@ -373,6 +375,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
             <div class="hint">Saved locally. Test saves the current key before sending hello.</div>
           </div>
           <div class="field"><label for="endpointHeaders">Default headers JSON</label><textarea id="endpointHeaders" placeholder='{"x-custom-header":"value"}'></textarea></div>
+          <div class="hint">Test sends hello using the first agent model assigned to this endpoint.</div>
           <div class="row"><button class="primary" type="submit"><span class="codicon codicon-save"></span>Save</button><button type="button" id="testEndpoint"><span class="codicon codicon-beaker"></span>Test</button><button type="button" id="deleteEndpoint" class="danger"><span class="codicon codicon-trash"></span>Delete</button></div>
         </form>
       </section>
@@ -466,6 +469,12 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       $('endpointApiVersion').value = $('endpointApiVersion').value || '2024-10-21';
       $('endpointPath').value = '';
     });
+    $('azureResponsesPreset').addEventListener('click', () => {
+      $('endpointKind').value = 'responses';
+      $('endpointAuth').value = 'api-key';
+      $('endpointApiVersion').value = $('endpointApiVersion').value || '2025-04-01-preview';
+      $('endpointPath').value = '';
+    });
     $('openAiPreset').addEventListener('click', () => {
       $('endpointKind').value = 'chat-completions';
       $('endpointAuth').value = 'bearer';
@@ -497,6 +506,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
         role: $('agentRole').value,
         endpointId: $('agentEndpoint').value || undefined,
         model: $('agentModel').value.trim() || undefined,
+        reasoningEffort: $('agentReasoningEffort').value || undefined,
         systemPrompt: $('agentPrompt').value.trim(),
         temperature: $('agentTemperature').value === '' ? undefined : Number($('agentTemperature').value),
         enabled: $('agentEnabled').value === 'true'
@@ -673,6 +683,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       $('agentEnabled').value = String(agent?.enabled ?? true);
       $('agentEndpoint').value = agent?.endpointId || '';
       $('agentModel').value = agent?.model || '';
+      $('agentReasoningEffort').value = agent?.reasoningEffort || '';
       $('agentTemperature').value = agent?.temperature ?? '';
       $('agentPrompt').value = agent?.systemPrompt || '';
     }
