@@ -246,9 +246,10 @@ export class OrchestratorRuntime {
 function toolProtocolInstructions(): string {
   return [
     'Local tools are available through a provider-neutral JSON protocol.',
-    'To use tools, reply only with valid JSON: {"toolCalls":[{"name":"web_search","arguments":{"query":"text"}},{"name":"fetch_url","arguments":{"url":"https://example.com"}},{"name":"list_files","arguments":{"glob":"src/**/*.ts"}},{"name":"read_file","arguments":{"path":"src/file.ts","maxBytes":12000}},{"name":"search_workspace","arguments":{"query":"needle"}},{"name":"write_file","arguments":{"path":"relative/path.ts","content":"full file content","description":"why"}},{"name":"delete_file","arguments":{"path":"relative/path.ts","description":"why"}}]}',
+    'To use tools, reply only with valid JSON: {"toolCalls":[{"name":"web_search","arguments":{"query":"text"}},{"name":"fetch_url","arguments":{"url":"https://example.com"}},{"name":"list_directory","arguments":{"path":"src"}},{"name":"list_files","arguments":{"glob":"src/**/*.ts"}},{"name":"read_file","arguments":{"path":"src/file.ts","maxBytes":12000}},{"name":"read_files","arguments":{"paths":["src/a.ts","src/b.ts"],"maxBytesPerFile":12000}},{"name":"search_workspace","arguments":{"query":"needle"}},{"name":"get_diagnostics","arguments":{"path":"src/file.ts"}},{"name":"edit_file","arguments":{"path":"src/file.ts","oldText":"exact text to replace","newText":"replacement text","description":"why"}},{"name":"write_file","arguments":{"path":"relative/path.ts","content":"full file content","description":"why"}},{"name":"delete_file","arguments":{"path":"relative/path.ts","description":"why"}},{"name":"run_terminal_command","arguments":{"command":"npm test","description":"why"}}]}',
     'Do not pretend a tool ran. Request a tool call first, then wait for tool results.',
+    'Prefer edit_file for targeted changes after reading the file. Use write_file only for new files or complete rewrites.',
     'To propose workspace changes instead of tool calls, reply with valid JSON: {"fileEdits":[{"path":"relative/path","content":"full file content","description":"why"}],"fileDeletes":[{"path":"relative/path","description":"why"}],"terminalCommands":[{"command":"npm test","cwd":"optional/path","description":"why"}]}',
-    'File writes, file deletes, and terminal commands require user approval before execution.'
+    'edit_file, write_file, delete_file, and run_terminal_command queue approval actions instead of changing the workspace immediately.'
   ].join('\n');
 }

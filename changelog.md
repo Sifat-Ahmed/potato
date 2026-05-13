@@ -13,6 +13,7 @@
 - Added an external fallback webview controller and ready-handshake logging so Mac webviews can recover when the main UI script does not finish startup.
 - Limited the live chat transcript to `Thinking...` plus the final response while keeping detailed plan/delegation/tool updates in run history.
 - Clarified manager delegation: the manager returns a JSON task plan, Potato calls selected specialist agents, then the manager synthesizes the final answer.
+- Added coding-agent tools inspired by Codex and Claude Code workflows: directory listing, multi-file read, targeted file edits, VS Code diagnostics, and approval-queued terminal commands.
 - Added a Codex-style Azure Responses preset and Responses request mapping for `instructions`, `input`, and `reasoning.effort`.
 - Added endpoint testing, optional streaming, and run cancellation.
 - Added a local conversation database with reopenable conversation history.

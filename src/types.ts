@@ -66,7 +66,19 @@ export interface DelegationTask {
   instructions: string;
 }
 
-export type ToolName = 'web_search' | 'fetch_url' | 'list_files' | 'read_file' | 'search_workspace' | 'write_file' | 'delete_file';
+export type ToolName =
+  | 'web_search'
+  | 'fetch_url'
+  | 'list_directory'
+  | 'list_files'
+  | 'read_file'
+  | 'read_files'
+  | 'search_workspace'
+  | 'get_diagnostics'
+  | 'edit_file'
+  | 'write_file'
+  | 'delete_file'
+  | 'run_terminal_command';
 
 export interface ToolCall {
   name: ToolName;

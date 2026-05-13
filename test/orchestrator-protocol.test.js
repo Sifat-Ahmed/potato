@@ -28,13 +28,17 @@ test('extractToolCalls returns supported tool calls only', () => {
     toolCalls: [
       { name: 'read_file', arguments: { path: 'src/types.ts' } },
       { name: 'write_file', arguments: { path: 'src/example.ts', content: 'export {};' } },
+      { name: 'edit_file', arguments: { path: 'src/example.ts', oldText: 'old', newText: 'new' } },
+      { name: 'run_terminal_command', arguments: { command: 'npm test' } },
       { name: 'unknown', arguments: {} }
     ]
   }));
 
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 4);
   assert.equal(calls[0].name, 'read_file');
   assert.equal(calls[1].name, 'write_file');
+  assert.equal(calls[2].name, 'edit_file');
+  assert.equal(calls[3].name, 'run_terminal_command');
 });
 
 test('extractPendingActions creates approval actions', () => {

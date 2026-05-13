@@ -63,7 +63,20 @@ export function extractPendingActions(text: string, sourceAgent: AgentConfig): P
 }
 
 function isToolCall(value: ToolCall): boolean {
-  return ['web_search', 'fetch_url', 'list_files', 'read_file', 'search_workspace', 'write_file', 'delete_file'].includes(value.name)
+  return [
+    'web_search',
+    'fetch_url',
+    'list_directory',
+    'list_files',
+    'read_file',
+    'read_files',
+    'search_workspace',
+    'get_diagnostics',
+    'edit_file',
+    'write_file',
+    'delete_file',
+    'run_terminal_command'
+  ].includes(value.name)
     && typeof value.arguments === 'object'
     && value.arguments !== null;
 }

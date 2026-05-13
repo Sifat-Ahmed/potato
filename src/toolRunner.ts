@@ -3,6 +3,7 @@ import { AgentConfig, PendingAction, ToolCall, ToolResult } from './types';
 import { createId } from './utils';
 
 const MAX_TOOL_BYTES = 12000;
+const MAX_EDIT_BYTES = 250000;
 
 export class ToolRunner {
   async run(call: ToolCall, sourceAgent?: AgentConfig): Promise<ToolResult> {
@@ -12,6 +13,8 @@ export class ToolRunner {
           return { name: call.name, ok: true, content: await this.webSearch(String(call.arguments.query ?? '')) };
         case 'fetch_url':
           return { name: call.name, ok: true, content: await this.fetchUrl(String(call.arguments.url ?? '')) };
+        case 'list_directory':
+          return { name: call.name, ok: true, content: await this.listDirectory(String(call.arguments.path ?? '.')) };
         case 'list_files':
           return { name: call.name, ok: true, content: await this.listFiles(String(call.arguments.glob ?? '**/*')) };
         case 'read_file':
@@ -20,12 +23,24 @@ export class ToolRunner {
             ok: true,
             content: await this.readFile(String(call.arguments.path ?? ''), numberArg(call.arguments.maxBytes, MAX_TOOL_BYTES))
           };
+        case 'read_files':
+          return {
+            name: call.name,
+            ok: true,
+            content: await this.readFiles(arrayArg(call.arguments.paths), numberArg(call.arguments.maxBytesPerFile, MAX_TOOL_BYTES))
+          };
         case 'search_workspace':
           return { name: call.name, ok: true, content: await this.searchWorkspace(String(call.arguments.query ?? '')) };
+        case 'get_diagnostics':
+          return { name: call.name, ok: true, content: this.getDiagnostics(optionalStringArg(call.arguments.path)) };
+        case 'edit_file':
+          return await this.queueTargetedFileEdit(call, sourceAgent);
         case 'write_file':
           return this.queueFileWrite(call, sourceAgent);
         case 'delete_file':
           return this.queueFileDelete(call, sourceAgent);
+        case 'run_terminal_command':
+          return this.queueTerminalCommand(call, sourceAgent);
       }
     } catch (error) {
       return {
@@ -114,10 +129,37 @@ export class ToolRunner {
     return files.map(file => vscode.workspace.asRelativePath(file, false)).join('\n') || 'No files matched.';
   }
 
+  private async listDirectory(relativePath: string): Promise<string> {
+    const uri = resolveWorkspaceUri(relativePath || '.');
+    const entries = await vscode.workspace.fs.readDirectory(uri);
+    return entries
+      .sort(([left], [right]) => left.localeCompare(right))
+      .slice(0, 200)
+      .map(([name, type]) => `${type === vscode.FileType.Directory ? 'dir ' : 'file'} ${name}`)
+      .join('\n') || 'Directory is empty.';
+  }
+
   private async readFile(relativePath: string, maxBytes: number): Promise<string> {
     const uri = resolveWorkspaceUri(relativePath);
     const bytes = await vscode.workspace.fs.readFile(uri);
     return Buffer.from(bytes).toString('utf8').slice(0, Math.min(Math.max(maxBytes, 1), MAX_TOOL_BYTES));
+  }
+
+  private async readFiles(paths: unknown[], maxBytesPerFile: number): Promise<string> {
+    const filePaths = paths
+      .map(path => optionalStringArg(path))
+      .filter((path): path is string => Boolean(path))
+      .slice(0, 8);
+    if (filePaths.length === 0) {
+      throw new Error('read_files requires a paths array.');
+    }
+
+    const cappedBytes = Math.min(Math.max(maxBytesPerFile, 1), MAX_TOOL_BYTES);
+    const sections = await Promise.all(filePaths.map(async path => [
+      `--- ${path} ---`,
+      await this.readFile(path, cappedBytes)
+    ].join('\n')));
+    return sections.join('\n\n');
   }
 
   private async searchWorkspace(query: string): Promise<string> {
@@ -149,6 +191,67 @@ export class ToolRunner {
     return matches.join('\n') || 'No workspace matches found.';
   }
 
+  private getDiagnostics(relativePath?: string): string {
+    const uri = relativePath ? resolveWorkspaceUri(relativePath) : undefined;
+    const diagnostics = relativePath
+      ? [[uri as vscode.Uri, vscode.languages.getDiagnostics(uri as vscode.Uri)] as [vscode.Uri, vscode.Diagnostic[]]]
+      : vscode.languages.getDiagnostics();
+
+    const rows = diagnostics.flatMap(([uri, items]) => items.map(item => {
+      const path = vscode.workspace.asRelativePath(uri, false);
+      const line = item.range.start.line + 1;
+      const column = item.range.start.character + 1;
+      return `${path}:${line}:${column}: ${severityName(item.severity)}: ${item.message}`;
+    }));
+
+    return rows.slice(0, 100).join('\n') || 'No VS Code diagnostics found.';
+  }
+
+  private async queueTargetedFileEdit(call: ToolCall, sourceAgent?: AgentConfig): Promise<ToolResult> {
+    if (!sourceAgent) {
+      throw new Error('edit_file requires an agent approval context.');
+    }
+
+    const path = String(call.arguments.path ?? '').trim();
+    const oldText = call.arguments.oldText;
+    const newText = call.arguments.newText;
+    const replaceAll = Boolean(call.arguments.replaceAll);
+    if (!path) {
+      throw new Error('edit_file requires a path.');
+    }
+    if (typeof oldText !== 'string' || oldText.length === 0) {
+      throw new Error('edit_file requires non-empty oldText.');
+    }
+    if (typeof newText !== 'string') {
+      throw new Error('edit_file requires string newText.');
+    }
+
+    const uri = resolveWorkspaceUri(path);
+    const stat = await vscode.workspace.fs.stat(uri);
+    if (stat.size > MAX_EDIT_BYTES) {
+      throw new Error(`edit_file refuses to edit files larger than ${MAX_EDIT_BYTES} bytes.`);
+    }
+
+    const original = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+    const matchCount = original.split(oldText).length - 1;
+    if (matchCount === 0) {
+      throw new Error(`edit_file oldText was not found in ${path}.`);
+    }
+    if (matchCount > 1 && !replaceAll) {
+      throw new Error(`edit_file oldText matched ${matchCount} times in ${path}; set replaceAll true or provide a more specific oldText.`);
+    }
+
+    const content = replaceAll ? original.split(oldText).join(newText) : original.replace(oldText, newText);
+    return this.queueFileEditAction(
+      call.name,
+      path,
+      content,
+      String(call.arguments.description ?? `Edit ${path}`),
+      sourceAgent,
+      typeof call.arguments.description === 'string' ? call.arguments.description : undefined
+    );
+  }
+
   private queueFileWrite(call: ToolCall, sourceAgent?: AgentConfig): ToolResult {
     if (!sourceAgent) {
       throw new Error('write_file requires an agent approval context.');
@@ -163,10 +266,28 @@ export class ToolRunner {
       throw new Error('write_file requires string content.');
     }
 
+    return this.queueFileEditAction(
+      call.name,
+      path,
+      content,
+      String(call.arguments.description ?? `Write ${path}`),
+      sourceAgent,
+      typeof call.arguments.description === 'string' ? call.arguments.description : undefined
+    );
+  }
+
+  private queueFileEditAction(
+    toolName: ToolCall['name'],
+    path: string,
+    content: string,
+    title: string,
+    sourceAgent: AgentConfig,
+    description?: string
+  ): ToolResult {
     const action: PendingAction = {
       id: createId('action'),
       kind: 'file-edit',
-      title: String(call.arguments.description ?? `Write ${path}`),
+      title,
       sourceAgentId: sourceAgent.id,
       sourceAgentName: sourceAgent.name,
       status: 'pending',
@@ -175,14 +296,14 @@ export class ToolRunner {
       fileEdit: {
         path,
         content,
-        description: typeof call.arguments.description === 'string' ? call.arguments.description : undefined
+        description
       }
     };
 
     return {
-      name: call.name,
+      name: toolName,
       ok: true,
-      content: `Queued file write for approval: ${path}`,
+      content: `Queued file edit for approval: ${path}`,
       actions: [action]
     };
   }
@@ -219,6 +340,41 @@ export class ToolRunner {
       actions: [action]
     };
   }
+
+  private queueTerminalCommand(call: ToolCall, sourceAgent?: AgentConfig): ToolResult {
+    if (!sourceAgent) {
+      throw new Error('run_terminal_command requires an agent approval context.');
+    }
+
+    const command = String(call.arguments.command ?? '').trim();
+    const cwd = optionalStringArg(call.arguments.cwd);
+    if (!command) {
+      throw new Error('run_terminal_command requires a command.');
+    }
+
+    const action: PendingAction = {
+      id: createId('action'),
+      kind: 'terminal-command',
+      title: String(call.arguments.description ?? command),
+      sourceAgentId: sourceAgent.id,
+      sourceAgentName: sourceAgent.name,
+      status: 'pending',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      terminalCommand: {
+        command,
+        cwd,
+        description: typeof call.arguments.description === 'string' ? call.arguments.description : undefined
+      }
+    };
+
+    return {
+      name: call.name,
+      ok: true,
+      content: `Queued terminal command for approval: ${command}`,
+      actions: [action]
+    };
+  }
 }
 
 export function resolveWorkspaceUri(relativePath: string): vscode.Uri {
@@ -238,6 +394,29 @@ export function resolveWorkspaceUri(relativePath: string): vscode.Uri {
 function numberArg(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function arrayArg(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function optionalStringArg(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function severityName(severity: vscode.DiagnosticSeverity): string {
+  switch (severity) {
+    case vscode.DiagnosticSeverity.Error:
+      return 'error';
+    case vscode.DiagnosticSeverity.Warning:
+      return 'warning';
+    case vscode.DiagnosticSeverity.Information:
+      return 'info';
+    case vscode.DiagnosticSeverity.Hint:
+      return 'hint';
+    default:
+      return 'diagnostic';
+  }
 }
 
 function stripHtml(value: string): string {
