@@ -79,16 +79,28 @@ Models that do not support native function calling can request local tools by re
   "toolCalls": [
     { "name": "web_search", "arguments": { "query": "search text" } },
     { "name": "fetch_url", "arguments": { "url": "https://example.com" } },
+    { "name": "list_directory", "arguments": { "path": "src" } },
     { "name": "list_files", "arguments": { "glob": "src/**/*.ts" } },
     { "name": "read_file", "arguments": { "path": "src/file.ts", "maxBytes": 12000 } },
+    { "name": "read_files", "arguments": { "paths": ["src/a.ts", "src/b.ts"], "maxBytesPerFile": 12000 } },
     { "name": "search_workspace", "arguments": { "query": "needle" } },
+    { "name": "get_diagnostics", "arguments": { "path": "src/file.ts" } },
+    { "name": "edit_file", "arguments": { "path": "src/file.ts", "oldText": "exact text", "newText": "replacement", "description": "why" } },
     { "name": "write_file", "arguments": { "path": "src/file.ts", "content": "full file content", "description": "why" } },
-    { "name": "delete_file", "arguments": { "path": "src/old.ts", "description": "why" } }
+    { "name": "delete_file", "arguments": { "path": "src/old.ts", "description": "why" } },
+    { "name": "run_terminal_command", "arguments": { "command": "npm test", "description": "why" } }
   ]
 }
 ```
 
 The extension executes read-only tools locally, returns results to the agent, and asks for the final response. Mutating tools queue approval actions instead of changing files directly.
+
+Coding tool behavior:
+
+- `list_directory`, `list_files`, `read_file`, `read_files`, `search_workspace`, `get_diagnostics`, `web_search`, and `fetch_url` run immediately.
+- `edit_file` reads the current file, applies an exact `oldText` to `newText` replacement in memory, then queues the resulting full-file edit for approval. If `oldText` matches multiple places, the tool fails unless `replaceAll` is `true`.
+- `write_file`, `delete_file`, and `run_terminal_command` queue approval actions.
+- `get_diagnostics` reads VS Code's current Problems data, either for one path or for the workspace.
 
 ## Approval Actions
 

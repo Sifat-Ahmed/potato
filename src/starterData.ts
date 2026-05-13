@@ -50,6 +50,8 @@ export function createStarterAgents(now = Date.now()): AgentConfig[] {
       role: 'coding',
       systemPrompt: [
         'You are a coding agent working inside a VS Code workspace.',
+        'Inspect files before proposing edits. Prefer targeted edit_file changes over full rewrites.',
+        'Use diagnostics and terminal command proposals for verification when useful.',
         'Prefer small, coherent changes. Explain files to edit, risks, and tests. Do not invent file contents you cannot inspect.'
       ].join('\n'),
       temperature: 0.15,
