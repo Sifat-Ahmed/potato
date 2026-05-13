@@ -11,6 +11,8 @@
 - Hardened startup loading so malformed local endpoint, agent, action, run-history, or conversation records cannot leave the Potato view stuck on Loading.
 - Hardened webview script startup so UI handler failures are surfaced in the Potato output channel instead of leaving the view stuck on Loading.
 - Added an external fallback webview controller and ready-handshake logging so Mac webviews can recover when the main UI script does not finish startup.
+- Limited the live chat transcript to `Thinking...` plus the final response while keeping detailed plan/delegation/tool updates in run history.
+- Clarified manager delegation: the manager returns a JSON task plan, Potato calls selected specialist agents, then the manager synthesizes the final answer.
 - Added a Codex-style Azure Responses preset and Responses request mapping for `instructions`, `input`, and `reasoning.effort`.
 - Added endpoint testing, optional streaming, and run cancellation.
 - Added a local conversation database with reopenable conversation history.

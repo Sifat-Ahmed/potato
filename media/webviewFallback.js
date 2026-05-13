@@ -1,5 +1,5 @@
 (function () {
-  var fallbackDelayMs = 900;
+  var fallbackDelayMs = 5000;
 
   function byId(id) {
     return document.getElementById(id);
@@ -105,7 +105,8 @@
       activeConversation: undefined,
       attachments: [],
       running: false,
-      streamNode: null
+      streamNode: null,
+      thinkingNode: null
     };
 
     function setTab(tab) {
@@ -526,11 +527,13 @@
       }
       state.running = true;
       state.streamNode = null;
+      state.thinkingNode = null;
       setRunButtonLoading(true);
       if (byId('cancelRun')) {
         byId('cancelRun').disabled = false;
       }
       appendMessage('User', text || 'Attached files');
+      state.thinkingNode = appendMessage('Potato', 'Thinking...', 'thinking');
       if (input) {
         input.value = '';
       }
@@ -543,19 +546,35 @@
         return;
       }
       state.streamNode = null;
-      if (update.kind === 'status') appendMessage('Status', update.message);
-      else if (update.kind === 'plan') appendMessage('Plan', update.message);
-      else if (update.kind === 'tool-result') appendMessage('Tool', update.message);
-      else if (update.kind === 'action-proposal') appendMessage('Action', update.message);
-      else if (update.kind === 'agent-result') appendMessage(update.result && update.result.agentName || 'Agent', update.message);
-      else if (update.kind === 'final') { appendMessage('Manager', update.message, 'final'); finishRun(); }
-      else if (update.kind === 'cancelled') { appendMessage('Cancelled', update.message, 'error'); finishRun(); }
-      else if (update.kind === 'error') { appendMessage('Error', update.message, 'error'); finishRun(); }
+      if (update.kind === 'status' || update.kind === 'plan' || update.kind === 'tool-result' || update.kind === 'action-proposal' || update.kind === 'agent-result') return;
+      if (update.kind === 'final') {
+        removeThinking();
+        if (state.streamNode) {
+          state.streamNode.className = 'message final';
+          state.streamNode.querySelector('.message-label').textContent = 'Manager';
+          if (!state.streamNode.querySelector('.message-body').textContent.trim()) {
+            state.streamNode.querySelector('.message-body').textContent = update.message;
+          }
+        } else {
+          appendMessage('Manager', update.message, 'final');
+        }
+        finishRun();
+      }
+      else if (update.kind === 'cancelled') { removeThinking(); appendMessage('Cancelled', update.message, 'error'); finishRun(); }
+      else if (update.kind === 'error') { removeThinking(); appendMessage('Error', update.message, 'error'); finishRun(); }
     }
 
     function appendToken(token) {
       if (!state.streamNode) {
-        state.streamNode = appendMessage('Streaming', '', 'final');
+        if (state.thinkingNode) {
+          state.streamNode = state.thinkingNode;
+          state.thinkingNode = null;
+          state.streamNode.className = 'message final';
+          state.streamNode.querySelector('.message-label').textContent = 'Manager';
+          state.streamNode.querySelector('.message-body').textContent = '';
+        } else {
+          state.streamNode = appendMessage('Manager', '', 'final');
+        }
       }
       state.streamNode.querySelector('.message-body').textContent += token;
       state.streamNode.scrollIntoView({ block: 'end' });
@@ -563,10 +582,18 @@
 
     function finishRun() {
       state.running = false;
+      state.thinkingNode = null;
       setRunButtonLoading(false);
       if (byId('cancelRun')) {
         byId('cancelRun').disabled = true;
       }
+    }
+
+    function removeThinking() {
+      if (state.thinkingNode && state.thinkingNode.parentNode) {
+        state.thinkingNode.parentNode.removeChild(state.thinkingNode);
+      }
+      state.thinkingNode = null;
     }
 
     function setRunButtonLoading(loading) {

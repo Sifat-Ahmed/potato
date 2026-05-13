@@ -102,10 +102,12 @@ export class OrchestratorRuntime {
     const result = await this.llmClient.callAgent(endpoint, {
       agent: manager,
       input: [
-        'Create a delegation plan for this user task.',
+        'Create a delegation plan for this user task. You are not answering the user in this step.',
+        'Potato will execute each returned task by calling the selected agent, then send the results back to you for final synthesis.',
         'Return only valid JSON using this schema:',
         '{"tasks":[{"agentId":"agent id","title":"short title","instructions":"specific instructions"}]}',
         'Use only agent IDs from the available list. Keep the plan to the minimum useful tasks.',
+        'Return {"tasks":[]} only when no specialist agent is useful for this request.',
         '',
         `Available agents:\n${JSON.stringify(availableAgents, null, 2)}`,
         '',

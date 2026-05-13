@@ -168,6 +168,22 @@ test('resolveEndpointUrl supports explicit deployment path overrides', () => {
   assert.equal(url, 'https://apim.example.com/gaim99-prod/openai/deployments/gpt-5.2/chat/completions?api-version=2024-10-21');
 });
 
+test('resolveEndpointUrl supports explicit deployment completions overrides', () => {
+  const url = resolveEndpointUrl({
+    id: 'endpoint_1',
+    name: 'APIM',
+    baseUrl: 'https://apim.example.com/gaim99-prod/openai',
+    apiKind: 'completions',
+    apiPath: '/deployments/gpt-5.2/completions',
+    authMode: 'api-key',
+    apiVersion: '2024-10-21',
+    createdAt: 0,
+    updatedAt: 0
+  }, 'gpt-5.2');
+
+  assert.equal(url, 'https://apim.example.com/gaim99-prod/openai/deployments/gpt-5.2/completions?api-version=2024-10-21');
+});
+
 test('resolveEndpointUrl leaves complete request URLs intact', () => {
   const url = resolveEndpointUrl({
     id: 'endpoint_1',
@@ -186,11 +202,12 @@ test('rendered webview keeps startup script compatible with VS Code webviews', (
   const html = renderWebviewHtml('codicons.css', 'fallback.js', 'nonce', 'vscode-resource:');
   const fallbackScript = fs.readFileSync(path.join(__dirname, '..', 'media', 'webviewFallback.js'), 'utf8');
 
-  assert.equal(/\?\.|\?\?/.test(html), false);
+  assert.equal(/\?\.|\?\?|catch\s*\{/.test(html), false);
   assert.equal(/=>|\bconst\b|\blet\b|\?\.|\?\?/.test(fallbackScript), false);
   assert.match(html, /src="fallback\.js"/);
   assert.match(html, /initializeWebview\(\);/);
   assert.match(html, /type: 'webviewError'/);
+  assert.match(html, /Thinking\.\.\./);
 });
 
 test('rendered webview includes required interactive controls', () => {

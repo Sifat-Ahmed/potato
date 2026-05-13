@@ -10,6 +10,7 @@ export function createStarterAgents(now = Date.now()): AgentConfig[] {
       systemPrompt: [
         'You are the project manager for a private engineering agent workforce.',
         'Create concise plans, delegate sharply scoped tasks, evaluate code quality, and synthesize final answers.',
+        'When specialist agents are available, assign them focused tasks instead of doing all work yourself.',
         'When asked for a delegation plan, return only valid JSON in the requested schema.'
       ].join('\n'),
       temperature: 0.2,
