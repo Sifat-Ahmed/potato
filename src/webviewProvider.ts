@@ -40,15 +40,15 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
     this.view = webviewView;
     webviewView.webview.options = {
       enableScripts: true,
+      enableForms: true,
       localResourceRoots: [this.context.extensionUri]
     };
 
-    webviewView.webview.html = this.render(webviewView.webview);
     webviewView.webview.onDidReceiveMessage(message => {
       void this.handleMessage(message as WebviewToExtensionMessage);
     });
-    void this.refresh();
-    this.output.appendLine('Potato webview resolved.');
+    webviewView.webview.html = this.render(webviewView.webview);
+    this.output.appendLine('Potato webview resolved; waiting for ready.');
   }
 
   async reveal(): Promise<void> {
@@ -85,6 +85,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
     try {
       switch (message.type) {
         case 'ready':
+          this.output.appendLine('Potato webview ready.');
           await this.refresh();
           break;
         case 'webviewError':
@@ -428,7 +429,10 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
     const codiconsUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'node_modules', '@vscode', 'codicons', 'dist', 'codicon.css')
     );
-    return renderWebviewHtml(codiconsUri.toString(), nonce, webview.cspSource);
+    const fallbackScriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, 'media', 'webviewFallback.js')
+    );
+    return renderWebviewHtml(codiconsUri.toString(), fallbackScriptUri.toString(), nonce, webview.cspSource);
   }
 }
 

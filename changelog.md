@@ -10,6 +10,7 @@
 - Moved model/deployment, reasoning effort, and temperature setup from agents to endpoints; Endpoint Test now sends `hello` to the endpoint model and displays resolved URL plus raw error detail.
 - Hardened startup loading so malformed local endpoint, agent, action, run-history, or conversation records cannot leave the Potato view stuck on Loading.
 - Hardened webview script startup so UI handler failures are surfaced in the Potato output channel instead of leaving the view stuck on Loading.
+- Added an external fallback webview controller and ready-handshake logging so Mac webviews can recover when the main UI script does not finish startup.
 - Added a Codex-style Azure Responses preset and Responses request mapping for `instructions`, `input`, and `reasoning.effort`.
 - Added endpoint testing, optional streaming, and run cancellation.
 - Added a local conversation database with reopenable conversation history.
