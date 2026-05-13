@@ -56,12 +56,29 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   async refresh(): Promise<void> {
-    const [state, conversations] = await Promise.all([
-      this.storage.getPublicState(),
-      this.conversationDatabase.getPublicState()
-    ]);
-    this.post({ type: 'state', state: { ...state, ...conversations } });
-    this.post({ type: 'attachments', attachments: this.attachments });
+    try {
+      const [state, conversations] = await Promise.all([
+        this.storage.getPublicState(),
+        this.conversationDatabase.getPublicState()
+      ]);
+      this.post({ type: 'state', state: { ...state, ...conversations } });
+      this.post({ type: 'attachments', attachments: this.attachments });
+    } catch (error) {
+      const message = `Failed to load Potato local state: ${asErrorMessage(error)}`;
+      this.output.appendLine(message);
+      this.post({
+        type: 'state',
+        state: {
+          endpoints: [],
+          agents: [],
+          pendingActions: [],
+          runHistory: [],
+          conversations: []
+        }
+      });
+      this.post({ type: 'attachments', attachments: this.attachments });
+      this.post({ type: 'notice', level: 'error', message });
+    }
   }
 
   private async handleMessage(message: WebviewToExtensionMessage): Promise<void> {

@@ -141,11 +141,11 @@ export class ConversationDatabase {
     try {
       const bytes = await vscode.workspace.fs.readFile(uri);
       const parsed = JSON.parse(Buffer.from(bytes).toString('utf8')) as Partial<ConversationDatabaseState>;
-      return {
-        schemaVersion: 1,
-        activeConversationId: typeof parsed.activeConversationId === 'string' ? parsed.activeConversationId : undefined,
-        conversations: Array.isArray(parsed.conversations) ? parsed.conversations : []
-      };
+      const normalized = normalizeConversationState(parsed);
+      if (normalized.changed) {
+        await this.writeState(normalized.state);
+      }
+      return normalized.state;
     } catch {
       return { schemaVersion: 1, conversations: [] };
     }
@@ -171,4 +171,84 @@ function summarizeTitle(value: string): string {
   }
 
   return compact.length > 72 ? `${compact.slice(0, 69)}...` : compact;
+}
+
+function normalizeConversationState(parsed: Partial<ConversationDatabaseState>): { state: ConversationDatabaseState; changed: boolean } {
+  let changed = false;
+  const conversations = (Array.isArray(parsed.conversations) ? parsed.conversations : [])
+    .map((conversation, index) => normalizeConversation(conversation, index))
+    .filter((conversation): conversation is ConversationRecord => Boolean(conversation))
+    .slice(0, MAX_CONVERSATIONS);
+
+  if (conversations.length !== (parsed.conversations?.length ?? 0)) {
+    changed = true;
+  }
+
+  const activeConversationId = typeof parsed.activeConversationId === 'string'
+    && conversations.some(conversation => conversation.id === parsed.activeConversationId)
+    ? parsed.activeConversationId
+    : conversations[0]?.id;
+
+  if (activeConversationId !== parsed.activeConversationId) {
+    changed = true;
+  }
+
+  return {
+    changed,
+    state: {
+      schemaVersion: 1,
+      activeConversationId,
+      conversations
+    }
+  };
+}
+
+function normalizeConversation(value: unknown, index: number): ConversationRecord | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const now = Date.now();
+  const messages = (Array.isArray(value.messages) ? value.messages : [])
+    .map((message, messageIndex) => normalizeMessage(message, messageIndex))
+    .filter((message): message is ConversationMessage => Boolean(message))
+    .slice(-MAX_MESSAGES_PER_CONVERSATION);
+
+  return {
+    id: stringValue(value.id) || createId(`conversation_${index}`),
+    title: stringValue(value.title) || summarizeTitle(messages[0]?.content || 'New conversation'),
+    createdAt: numberValue(value.createdAt) ?? now,
+    updatedAt: numberValue(value.updatedAt) ?? now,
+    messages
+  };
+}
+
+function normalizeMessage(value: unknown, index: number): ConversationMessage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const role = value.role === 'user' || value.role === 'assistant' || value.role === 'system' || value.role === 'tool'
+    ? value.role
+    : 'system';
+  return {
+    id: stringValue(value.id) || createId(`message_${index}`),
+    role,
+    content: stringValue(value.content) || '',
+    createdAt: numberValue(value.createdAt) ?? Date.now(),
+    runId: stringValue(value.runId),
+    updateKind: typeof value.updateKind === 'string' ? value.updateKind as ConversationMessage['updateKind'] : undefined
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
