@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ConversationDatabase } from './conversationDatabase';
-import { LlmClient } from './llmClient';
+import { LlmClient, resolveEndpointUrl } from './llmClient';
 import { OrchestratorRuntime } from './orchestrator';
 import { OrchestratorStorage } from './storage';
 import { ToolRunner } from './toolRunner';
@@ -273,17 +273,29 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
       throw new Error('Endpoint not found.');
     }
 
-    const model = endpoint.testModel || state.agents.find(agent => agent.endpointId === endpointId && agent.model)?.model;
-    if (!model) {
-      throw new Error('Assign this endpoint to an agent and set that agent model before testing.');
+    if (!endpoint.model && !endpoint.testModel) {
+      const message = `Set a model/deployment on endpoint ${endpoint.name} before testing.`;
+      this.post({ type: 'endpointTestResult', endpointId, status: 'error', message });
+      this.post({ type: 'notice', level: 'error', message });
+      return;
     }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
+    let url: string | undefined;
     try {
+      url = resolveEndpointUrl(endpoint, endpoint.model || endpoint.testModel);
+      this.post({ type: 'endpointTestResult', endpointId, status: 'running', message: `Sending hello to ${endpoint.name}.`, url });
       this.post({ type: 'notice', level: 'info', message: `Testing ${endpoint.name}.` });
-      const result = await new LlmClient(id => this.storage.getApiKey(id)).testEndpoint(endpoint, model, controller.signal);
-      this.post({ type: 'notice', level: 'info', message: `Endpoint OK: ${result.text || 'connected'}` });
+      const result = await new LlmClient(id => this.storage.getApiKey(id)).testEndpoint(endpoint, controller.signal);
+      const message = `Endpoint OK: ${result.text || 'connected'}`;
+      this.post({ type: 'endpointTestResult', endpointId, status: 'ok', message, url });
+      this.post({ type: 'notice', level: 'info', message });
+    } catch (error) {
+      const message = asErrorMessage(error);
+      this.output.appendLine(`Endpoint test failed: ${message}`);
+      this.post({ type: 'endpointTestResult', endpointId, status: 'error', message, url });
+      this.post({ type: 'notice', level: 'error', message });
     } finally {
       clearTimeout(timeout);
     }

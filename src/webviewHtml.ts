@@ -242,6 +242,18 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
     }
     .message.final { border-left-color: var(--accent); }
     .message.error { border-left-color: var(--danger); color: var(--danger); }
+    .test-result {
+      display: none;
+      border-left: 2px solid var(--border);
+      padding: 6px 0 6px 10px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .test-result.show { display: block; }
+    .test-result.ok { border-left-color: var(--accent); color: var(--text); }
+    .test-result.error { border-left-color: var(--danger); color: var(--danger); }
     .message-label {
       color: var(--muted);
       font-size: 11px;
@@ -323,7 +335,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
 
       <section class="section" id="agents">
         <div class="row split">
-          <div><div class="item-title">Agents</div><div class="hint">Roles and model bindings</div></div>
+          <div><div class="item-title">Agents</div><div class="hint">Roles and endpoint assignment</div></div>
           <button id="newAgent"><span class="codicon codicon-add"></span>New</button>
         </div>
         <div class="stack" id="agentList"></div>
@@ -335,11 +347,6 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
             <div class="field"><label for="agentEnabled">State</label><select id="agentEnabled"><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
           </div>
           <div class="field"><label for="agentEndpoint">Endpoint</label><select id="agentEndpoint"></select></div>
-          <div class="grid-2">
-            <div class="field"><label for="agentModel">Model / deployment</label><input id="agentModel" placeholder="gpt-5.2"><div class="hint">Sent as the request body model value for this agent.</div></div>
-            <div class="field"><label for="agentTemperature">Temperature</label><input id="agentTemperature" type="number" min="0" max="2" step="0.05" placeholder="0.2"></div>
-          </div>
-          <div class="field"><label for="agentReasoningEffort">Reasoning effort</label><select id="agentReasoningEffort"><option value="">Default</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select><div class="hint">For Responses models such as Codex/GPT-5. When set, Potato sends reasoning.effort and omits temperature.</div></div>
           <div class="field"><label for="agentPrompt">System prompt</label><textarea id="agentPrompt" required></textarea></div>
           <div class="row"><button class="primary" type="submit"><span class="codicon codicon-save"></span>Save</button><button type="button" id="deleteAgent" class="danger"><span class="codicon codicon-trash"></span>Delete</button></div>
         </form>
@@ -355,6 +362,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
           <input type="hidden" id="endpointId">
           <div class="row wrap"><button type="button" id="azurePreset">Azure chat preset</button><button type="button" id="azureResponsesPreset">Azure Responses preset</button><button type="button" id="openAiPreset">OpenAI preset</button></div>
           <div class="field"><label for="endpointName">Name</label><input id="endpointName" required></div>
+          <div class="field"><label for="endpointModel">Model / deployment</label><input id="endpointModel" placeholder="gpt-5.1-codex" required><div class="hint">Endpoint Test and assigned agents use this request body model value.</div></div>
           <div class="field"><label for="endpointBaseUrl">Base URL</label><input id="endpointBaseUrl" placeholder="https://apim.example.com/team/openai" required><div class="hint">For Cline-style OpenAI compatible APIM, paste through /openai. Full request URLs also work.</div></div>
           <div class="field"><label for="endpointPath">Path override</label><input id="endpointPath" placeholder="Leave blank, or /deployments/model/chat/completions"></div>
           <div class="grid-2">
@@ -362,6 +370,10 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
             <div class="field"><label for="endpointAuth">Auth</label><select id="endpointAuth"><option value="bearer">Bearer token</option><option value="api-key">api-key header</option><option value="none">None</option></select></div>
           </div>
           <div class="field"><label for="endpointStreaming">Streaming</label><select id="endpointStreaming"><option value="false">Off</option><option value="true">On if supported</option></select></div>
+          <div class="grid-2">
+            <div class="field"><label for="endpointReasoningEffort">Reasoning effort</label><select id="endpointReasoningEffort"><option value="">Default</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+            <div class="field"><label for="endpointTemperature">Temperature</label><input id="endpointTemperature" type="number" min="0" max="2" step="0.05" placeholder="optional"></div>
+          </div>
           <div class="grid-2">
             <div class="field"><label for="endpointApiVersion">API version</label><input id="endpointApiVersion" placeholder="optional"></div>
             <div class="field"><label for="endpointOrganization">Organization</label><input id="endpointOrganization" placeholder="optional"></div>
@@ -375,7 +387,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
             <div class="hint">Saved locally. Test saves the current key before sending hello.</div>
           </div>
           <div class="field"><label for="endpointHeaders">Default headers JSON</label><textarea id="endpointHeaders" placeholder='{"x-custom-header":"value"}'></textarea></div>
-          <div class="hint">Test sends hello using the first agent model assigned to this endpoint.</div>
+          <div class="test-result" id="endpointTestResult"></div>
           <div class="row"><button class="primary" type="submit"><span class="codicon codicon-save"></span>Save</button><button type="button" id="testEndpoint"><span class="codicon codicon-beaker"></span>Test</button><button type="button" id="deleteEndpoint" class="danger"><span class="codicon codicon-trash"></span>Delete</button></div>
         </form>
       </section>
@@ -420,6 +432,9 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       }
       if (message.type === 'endpointKey') {
         handleEndpointKey(message);
+      }
+      if (message.type === 'endpointTestResult') {
+        handleEndpointTestResult(message);
       }
       if (message.type === 'runUpdate') appendRunUpdate(message.update);
       if (message.type === 'notice') showNotice(message.message, message.level);
@@ -505,10 +520,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
         name: $('agentName').value.trim(),
         role: $('agentRole').value,
         endpointId: $('agentEndpoint').value || undefined,
-        model: $('agentModel').value.trim() || undefined,
-        reasoningEffort: $('agentReasoningEffort').value || undefined,
         systemPrompt: $('agentPrompt').value.trim(),
-        temperature: $('agentTemperature').value === '' ? undefined : Number($('agentTemperature').value),
         enabled: $('agentEnabled').value === 'true'
       }});
     });
@@ -535,10 +547,13 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
           id: $('endpointId').value || createId('endpoint'),
           name: $('endpointName').value.trim(),
           baseUrl: $('endpointBaseUrl').value.trim(),
+          model: $('endpointModel').value.trim(),
           apiKind: $('endpointKind').value,
           apiPath: $('endpointPath').value.trim() || undefined,
           authMode: $('endpointAuth').value,
           streaming: $('endpointStreaming').value === 'true',
+          reasoningEffort: $('endpointReasoningEffort').value || undefined,
+          temperature: $('endpointTemperature').value === '' ? undefined : Number($('endpointTemperature').value),
           apiVersion: $('endpointApiVersion').value.trim() || undefined,
           organization: $('endpointOrganization').value.trim() || undefined,
           defaultHeaders
@@ -587,7 +602,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
     function renderEndpointOptions() {
       const select = $('agentEndpoint');
       const selected = select.value;
-      select.innerHTML = '<option value="">No endpoint</option>' + state.endpoints.map(endpoint => '<option value="' + escapeHtml(endpoint.id) + '">' + escapeHtml(endpoint.name) + '</option>').join('');
+      select.innerHTML = '<option value="">No endpoint</option>' + state.endpoints.map(endpoint => '<option value="' + escapeHtml(endpoint.id) + '">' + escapeHtml(endpoint.name + (endpoint.model ? ' · ' + endpoint.model : '')) + '</option>').join('');
       select.value = selected;
     }
 
@@ -596,7 +611,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       if (!state.agents.length) { list.innerHTML = '<div class="empty">No agents yet.</div>'; return; }
       list.innerHTML = state.agents.map(agent => {
         const endpoint = state.endpoints.find(item => item.id === agent.endpointId);
-        return '<button class="item" data-agent-id="' + escapeHtml(agent.id) + '"><div class="row split"><span class="item-title">' + escapeHtml(agent.name) + '</span><span class="badge">' + escapeHtml(agent.role) + '</span></div><div class="meta">' + escapeHtml(endpoint?.name || 'No endpoint') + ' · ' + escapeHtml(agent.model || 'No model') + '</div></button>';
+        return '<button class="item" data-agent-id="' + escapeHtml(agent.id) + '"><div class="row split"><span class="item-title">' + escapeHtml(agent.name) + '</span><span class="badge">' + escapeHtml(agent.role) + '</span></div><div class="meta">' + escapeHtml(endpoint ? endpoint.name + (endpoint.model ? ' · ' + endpoint.model : '') : 'No endpoint') + '</div></button>';
       }).join('');
       list.querySelectorAll('[data-agent-id]').forEach(button => button.addEventListener('click', () => editAgent(state.agents.find(agent => agent.id === button.dataset.agentId))));
     }
@@ -604,7 +619,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
     function renderEndpoints() {
       const list = $('endpointList');
       if (!state.endpoints.length) { list.innerHTML = '<div class="empty">No endpoints yet.</div>'; return; }
-      list.innerHTML = state.endpoints.map(endpoint => '<button class="item" data-endpoint-id="' + escapeHtml(endpoint.id) + '"><div class="row split"><span class="item-title">' + escapeHtml(endpoint.name) + '</span><span class="badge">' + escapeHtml(endpoint.apiKind) + '</span></div><div class="meta">' + escapeHtml(endpoint.baseUrl) + '</div><div class="meta">' + escapeHtml(endpoint.authMode) + ' · ' + (endpoint.streaming ? 'streaming' : 'no streaming') + ' · ' + (endpoint.hasApiKey ? 'key stored' : 'no key') + '</div></button>').join('');
+      list.innerHTML = state.endpoints.map(endpoint => '<button class="item" data-endpoint-id="' + escapeHtml(endpoint.id) + '"><div class="row split"><span class="item-title">' + escapeHtml(endpoint.name) + '</span><span class="badge">' + escapeHtml(endpoint.apiKind) + '</span></div><div class="meta">' + escapeHtml(endpoint.model || 'No model') + '</div><div class="meta">' + escapeHtml(endpoint.baseUrl) + '</div><div class="meta">' + escapeHtml(endpoint.authMode) + ' · ' + (endpoint.streaming ? 'streaming' : 'no streaming') + ' · ' + (endpoint.hasApiKey ? 'key stored' : 'no key') + '</div></button>').join('');
       list.querySelectorAll('[data-endpoint-id]').forEach(button => button.addEventListener('click', () => editEndpoint(state.endpoints.find(endpoint => endpoint.id === button.dataset.endpointId))));
     }
 
@@ -682,20 +697,20 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       $('agentRole').value = agent?.role || 'custom';
       $('agentEnabled').value = String(agent?.enabled ?? true);
       $('agentEndpoint').value = agent?.endpointId || '';
-      $('agentModel').value = agent?.model || '';
-      $('agentReasoningEffort').value = agent?.reasoningEffort || '';
-      $('agentTemperature').value = agent?.temperature ?? '';
       $('agentPrompt').value = agent?.systemPrompt || '';
     }
 
     function editEndpoint(endpoint) {
       $('endpointId').value = endpoint?.id || '';
       $('endpointName').value = endpoint?.name || '';
+      $('endpointModel').value = endpoint?.model || endpoint?.testModel || '';
       $('endpointBaseUrl').value = endpoint?.baseUrl || '';
       $('endpointPath').value = endpoint?.apiPath || '';
       $('endpointKind').value = endpoint?.apiKind || 'chat-completions';
       $('endpointAuth').value = endpoint?.authMode || 'bearer';
       $('endpointStreaming').value = String(endpoint?.streaming ?? false);
+      $('endpointReasoningEffort').value = endpoint?.reasoningEffort || '';
+      $('endpointTemperature').value = endpoint?.temperature ?? '';
       $('endpointApiVersion').value = endpoint?.apiVersion || '';
       $('endpointOrganization').value = endpoint?.organization || '';
       $('endpointApiKey').value = '';
@@ -703,6 +718,7 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       $('endpointApiKey').placeholder = endpoint?.hasApiKey ? 'Saved key available' : 'Saved locally after Save or Test';
       setEndpointEyeIcon(false);
       $('endpointHeaders').value = endpoint?.defaultHeaders ? JSON.stringify(endpoint.defaultHeaders, null, 2) : '';
+      clearEndpointTestResult();
     }
 
     function toggleEndpointApiKey() {
@@ -731,6 +747,28 @@ export function renderWebviewHtml(codiconsUri: string, nonce: string, cspSource:
       $('endpointApiKey').value = message.apiKey;
       $('endpointApiKey').type = 'text';
       setEndpointEyeIcon(true);
+    }
+
+    function handleEndpointTestResult(message) {
+      if (message.endpointId !== $('endpointId').value) return;
+      const node = $('endpointTestResult');
+      node.className = 'test-result show ' + (message.status === 'ok' ? 'ok' : message.status === 'error' ? 'error' : '');
+      node.textContent = (message.status === 'running' ? 'Testing endpoint...' : message.message) + (message.url ? '\nURL: ' + message.url : '');
+      setEndpointTestLoading(message.status === 'running');
+    }
+
+    function clearEndpointTestResult() {
+      $('endpointTestResult').className = 'test-result';
+      $('endpointTestResult').textContent = '';
+      setEndpointTestLoading(false);
+    }
+
+    function setEndpointTestLoading(loading) {
+      const button = $('testEndpoint');
+      button.disabled = loading;
+      button.innerHTML = loading
+        ? '<span class="codicon codicon-loading codicon-modifier-spin"></span>Testing'
+        : '<span class="codicon codicon-beaker"></span>Test';
     }
 
     function setEndpointEyeIcon(visible) {

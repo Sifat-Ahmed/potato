@@ -1,4 +1,4 @@
-import { AgentCallRequest, AgentCallResult, ChatMessage, EndpointConfig } from './types';
+import { AgentCallRequest, AgentCallResult, AgentConfig, ChatMessage, EndpointConfig } from './types';
 import { cleanBaseUrl } from './utils';
 
 interface ChatCompletionsResponse {
@@ -32,13 +32,21 @@ export class LlmClient {
       throw new Error(`No API key stored for endpoint ${endpoint.name}. Enter an API key and click Save or Test.`);
     }
 
+    const effectiveRequest: AgentCallRequest = {
+      ...request,
+      agent: createEffectiveAgentConfig(endpoint, request.agent)
+    };
+    if (!effectiveRequest.agent.model) {
+      throw new Error(`Endpoint ${endpoint.name} needs a model/deployment. Set it in the endpoint form before testing or running agents.`);
+    }
+
     const headers = this.buildHeaders(endpoint, apiKey);
-    const url = this.buildUrl(endpoint, request.agent.model);
-    const body = this.createBody(endpoint, request);
-    const shouldStream = Boolean(endpoint.streaming || request.stream);
+    const url = this.buildUrl(endpoint, effectiveRequest.agent.model);
+    const body = this.createBody(endpoint, effectiveRequest);
+    const shouldStream = Boolean(endpoint.streaming || effectiveRequest.stream);
 
     if (shouldStream) {
-      return this.callAgentStreaming(endpoint, request, url, headers, body);
+      return this.callAgentStreaming(endpoint, effectiveRequest, url, headers, body);
     }
 
     let response: Response;
@@ -68,25 +76,24 @@ export class LlmClient {
 
     if (!response.ok) {
       const detail = typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
-      throw new Error(`Endpoint ${endpoint.name} returned ${response.status}: ${detail}`);
+      throw new Error(formatEndpointHttpError(endpoint.name, url, response.status, response.statusText, detail));
     }
 
     return {
-      agentId: request.agent.id,
-      agentName: request.agent.name,
+      agentId: effectiveRequest.agent.id,
+      agentName: effectiveRequest.agent.name,
       text: this.extractText(endpoint, parsed),
       raw: parsed
     };
   }
 
-  async testEndpoint(endpoint: EndpointConfig, model: string, abortSignal?: AbortSignal): Promise<AgentCallResult> {
+  async testEndpoint(endpoint: EndpointConfig, abortSignal?: AbortSignal): Promise<AgentCallResult> {
     return this.callAgent(endpoint, {
       agent: {
         id: 'endpoint-test',
         name: 'Endpoint Test',
         role: 'custom',
         endpointId: endpoint.id,
-        model,
         systemPrompt: 'You are a connectivity test. Reply briefly.',
         temperature: 0,
         enabled: true,
@@ -124,7 +131,7 @@ export class LlmClient {
 
     if (!response.ok || !response.body) {
       const responseText = await response.text();
-      throw new Error(`Endpoint ${endpoint.name} returned ${response.status}: ${responseText}`);
+      throw new Error(formatEndpointHttpError(endpoint.name, url, response.status, response.statusText, responseText));
     }
 
     const decoder = new TextDecoder();
@@ -317,6 +324,15 @@ export function resolveEndpointUrl(endpoint: EndpointConfig, model: string | und
   return url.toString();
 }
 
+export function createEffectiveAgentConfig(endpoint: EndpointConfig, agent: AgentConfig): AgentConfig {
+  return {
+    ...agent,
+    model: endpoint.model || endpoint.testModel || agent.model,
+    reasoningEffort: endpoint.reasoningEffort ?? agent.reasoningEffort,
+    temperature: endpoint.temperature ?? agent.temperature
+  };
+}
+
 export function createResponsesRequestBody(request: AgentCallRequest): Record<string, unknown> {
   const messages = createRequestMessages(request);
   const instructions = messages
@@ -407,4 +423,18 @@ function formatFetchError(error: unknown): string {
   }
 
   return typeof error === 'string' ? error : 'Unknown network error';
+}
+
+function formatEndpointHttpError(
+  endpointName: string,
+  url: string,
+  status: number,
+  statusText: string,
+  detail: string
+): string {
+  return [
+    `Endpoint ${endpointName} returned ${status}${statusText ? ` ${statusText}` : ''}.`,
+    `URL: ${url}`,
+    `Response: ${detail || 'empty response'}`
+  ].join('\n');
 }

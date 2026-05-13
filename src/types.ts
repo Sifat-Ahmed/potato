@@ -2,14 +2,19 @@ export type EndpointApiKind = 'chat-completions' | 'responses' | 'completions';
 
 export type AuthMode = 'bearer' | 'api-key' | 'none';
 
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high';
+
 export interface EndpointConfig {
   id: string;
   name: string;
   baseUrl: string;
+  model?: string;
   apiKind: EndpointApiKind;
   apiPath?: string;
   authMode: AuthMode;
   streaming?: boolean;
+  reasoningEffort?: ReasoningEffort;
+  temperature?: number;
   testModel?: string;
   apiVersion?: string;
   organization?: string;
@@ -26,7 +31,7 @@ export interface AgentConfig {
   role: AgentRole;
   endpointId?: string;
   model?: string;
-  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high';
+  reasoningEffort?: ReasoningEffort;
   systemPrompt: string;
   temperature?: number;
   enabled: boolean;
@@ -224,5 +229,6 @@ export type ExtensionToWebviewMessage =
   | { type: 'state'; state: PublicState }
   | { type: 'attachments'; attachments: ChatAttachment[] }
   | { type: 'endpointKey'; endpointId: string; apiKey?: string }
+  | { type: 'endpointTestResult'; endpointId: string; status: 'running' | 'ok' | 'error'; message: string; url?: string }
   | { type: 'runUpdate'; update: OrchestratorRunUpdate }
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string };
