@@ -9,6 +9,7 @@
 - Fixed endpoint testing to save the current API key before testing, added API key reveal/hide, added local key-file fallback storage, and aligned APIM `/openai` bases with Cline-style OpenAI-compatible routing.
 - Moved model/deployment, reasoning effort, and temperature setup from agents to endpoints; Endpoint Test now sends `hello` to the endpoint model and displays resolved URL plus raw error detail.
 - Hardened startup loading so malformed local endpoint, agent, action, run-history, or conversation records cannot leave the Potato view stuck on Loading.
+- Hardened webview script startup so UI handler failures are surfaced in the Potato output channel instead of leaving the view stuck on Loading.
 - Added a Codex-style Azure Responses preset and Responses request mapping for `instructions`, `input`, and `reasoning.effort`.
 - Added endpoint testing, optional streaming, and run cancellation.
 - Added a local conversation database with reopenable conversation history.
