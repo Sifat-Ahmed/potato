@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { AgentConfig, EndpointConfig, PendingAction, PersistedState, PublicState, RunHistoryEntry } from './types';
 import { createStarterAgents } from './starterData';
+import { createId } from './utils';
 
 const STATE_KEY = 'orchestrator.state.v1';
 const SECRET_PREFIX = 'orchestrator.endpointKey.';
@@ -232,12 +233,22 @@ export class OrchestratorStorage {
 
 function normalizeState(state: PersistedState): { state: PersistedState; changed: boolean } {
   let changed = false;
-  const endpoints = state.endpoints.map(endpoint => {
+  const agents = state.agents
+    .map((agent, index) => normalizeAgent(agent, index))
+    .filter((agent): agent is AgentConfig => Boolean(agent));
+  if (agents.length !== state.agents.length) {
+    changed = true;
+  }
+
+  const endpoints = state.endpoints
+    .map((endpoint, index) => normalizeEndpoint(endpoint, index))
+    .filter((endpoint): endpoint is EndpointConfig => Boolean(endpoint))
+    .map(endpoint => {
     if (endpoint.model) {
       return endpoint;
     }
 
-    const assignedAgent = state.agents.find(agent => agent.endpointId === endpoint.id && agent.model);
+    const assignedAgent = agents.find(agent => agent.endpointId === endpoint.id && agent.model);
     const model = endpoint.testModel || assignedAgent?.model;
     if (!model) {
       return endpoint;
@@ -251,12 +262,174 @@ function normalizeState(state: PersistedState): { state: PersistedState; changed
       temperature: endpoint.temperature ?? assignedAgent?.temperature
     };
   });
+  if (endpoints.length !== state.endpoints.length) {
+    changed = true;
+  }
+
+  const pendingActions = state.pendingActions
+    ?.map((action, index) => normalizePendingAction(action, index))
+    .filter((action): action is PendingAction => Boolean(action)) ?? [];
+  if (pendingActions.length !== (state.pendingActions ?? []).length) {
+    changed = true;
+  }
+
+  const runHistory = state.runHistory
+    ?.map((run, index) => normalizeRunHistoryEntry(run, index))
+    .filter((run): run is RunHistoryEntry => Boolean(run)) ?? [];
+  if (runHistory.length !== (state.runHistory ?? []).length) {
+    changed = true;
+  }
 
   return {
     changed,
     state: {
       ...state,
-      endpoints
+      endpoints,
+      agents,
+      pendingActions,
+      runHistory
     }
   };
+}
+
+function normalizeEndpoint(value: unknown, index: number): EndpointConfig | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const now = Date.now();
+  return {
+    id: stringValue(value.id) || createId(`endpoint_${index}`),
+    name: stringValue(value.name) || `Endpoint ${index + 1}`,
+    baseUrl: stringValue(value.baseUrl) || '',
+    model: stringValue(value.model),
+    apiKind: endpointApiKind(value.apiKind),
+    apiPath: stringValue(value.apiPath),
+    authMode: authMode(value.authMode),
+    streaming: booleanValue(value.streaming),
+    reasoningEffort: reasoningEffort(value.reasoningEffort),
+    temperature: numberValue(value.temperature),
+    testModel: stringValue(value.testModel),
+    apiVersion: stringValue(value.apiVersion),
+    organization: stringValue(value.organization),
+    defaultHeaders: recordOfStrings(value.defaultHeaders),
+    createdAt: numberValue(value.createdAt) ?? now,
+    updatedAt: numberValue(value.updatedAt) ?? now
+  };
+}
+
+function normalizeAgent(value: unknown, index: number): AgentConfig | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const now = Date.now();
+  return {
+    id: stringValue(value.id) || createId(`agent_${index}`),
+    name: stringValue(value.name) || `Agent ${index + 1}`,
+    role: agentRole(value.role),
+    endpointId: stringValue(value.endpointId),
+    model: stringValue(value.model),
+    reasoningEffort: reasoningEffort(value.reasoningEffort),
+    systemPrompt: stringValue(value.systemPrompt) || '',
+    temperature: numberValue(value.temperature),
+    enabled: booleanValue(value.enabled) ?? true,
+    createdAt: numberValue(value.createdAt) ?? now,
+    updatedAt: numberValue(value.updatedAt) ?? now
+  };
+}
+
+function normalizePendingAction(value: unknown, index: number): PendingAction | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const kind = ['file-edit', 'file-delete', 'terminal-command'].includes(String(value.kind)) ? value.kind as PendingAction['kind'] : undefined;
+  if (!kind) {
+    return undefined;
+  }
+
+  const now = Date.now();
+  const status = ['pending', 'applied', 'rejected', 'failed'].includes(String(value.status))
+    ? value.status as PendingAction['status']
+    : 'pending';
+  return {
+    id: stringValue(value.id) || createId(`action_${index}`),
+    kind,
+    title: stringValue(value.title) || kind,
+    sourceAgentId: stringValue(value.sourceAgentId),
+    sourceAgentName: stringValue(value.sourceAgentName),
+    status,
+    createdAt: numberValue(value.createdAt) ?? now,
+    updatedAt: numberValue(value.updatedAt) ?? now,
+    fileEdit: isRecord(value.fileEdit) ? value.fileEdit as unknown as PendingAction['fileEdit'] : undefined,
+    fileDelete: isRecord(value.fileDelete) ? value.fileDelete as unknown as PendingAction['fileDelete'] : undefined,
+    terminalCommand: isRecord(value.terminalCommand) ? value.terminalCommand as unknown as PendingAction['terminalCommand'] : undefined,
+    result: stringValue(value.result)
+  };
+}
+
+function normalizeRunHistoryEntry(value: unknown, index: number): RunHistoryEntry | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const status = ['completed', 'failed', 'cancelled'].includes(String(value.status))
+    ? value.status as RunHistoryEntry['status']
+    : 'failed';
+  const now = Date.now();
+  return {
+    id: stringValue(value.id) || createId(`run_${index}`),
+    conversationId: stringValue(value.conversationId),
+    userText: stringValue(value.userText) || 'Untitled run',
+    status,
+    startedAt: numberValue(value.startedAt) ?? now,
+    finishedAt: numberValue(value.finishedAt) ?? now,
+    updates: Array.isArray(value.updates) ? value.updates as RunHistoryEntry['updates'] : []
+  };
+}
+
+function endpointApiKind(value: unknown): EndpointConfig['apiKind'] {
+  return value === 'responses' || value === 'completions' || value === 'chat-completions' ? value : 'chat-completions';
+}
+
+function authMode(value: unknown): EndpointConfig['authMode'] {
+  return value === 'api-key' || value === 'none' || value === 'bearer' ? value : 'bearer';
+}
+
+function agentRole(value: unknown): AgentConfig['role'] {
+  return value === 'manager' || value === 'research' || value === 'web-search' || value === 'coding' || value === 'review' || value === 'custom'
+    ? value
+    : 'custom';
+}
+
+function reasoningEffort(value: unknown): EndpointConfig['reasoningEffort'] {
+  return value === 'minimal' || value === 'low' || value === 'medium' || value === 'high' ? value : undefined;
+}
+
+function recordOfStrings(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanValue(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
 }
