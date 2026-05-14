@@ -104,6 +104,7 @@
       conversations: [],
       activeConversation: undefined,
       attachments: [],
+      approvalMode: 'manual',
       running: false,
       streamNode: null,
       thinkingNode: null
@@ -120,7 +121,7 @@
         setActive(sections[index], sections[index].id === tab);
       }
       setActive(byId('historyButton'), tab === 'history');
-      setActive(byId('menuButton'), tab === 'agents' || tab === 'endpoints' || tab === 'actions');
+      setActive(byId('menuButton'), tab === 'agents' || tab === 'endpoints' || tab === 'actions' || tab === 'settings');
     }
 
     function closeMenu() {
@@ -167,6 +168,9 @@
       }
       if (actionCount) {
         actionCount.textContent = String(pendingCount());
+      }
+      if (byId('approvalMode')) {
+        byId('approvalMode').value = state.approvalMode;
       }
       renderEndpointOptions();
       renderAgents();
@@ -659,6 +663,7 @@
         state.pendingActions = message.state.pendingActions || [];
         state.runHistory = message.state.runHistory || [];
         state.conversations = message.state.conversations || [];
+        state.approvalMode = message.state.approvalMode || 'manual';
         state.activeConversation = message.state.activeConversation;
         renderAll();
       }
@@ -825,6 +830,11 @@
       }
       post({ type: 'saveEndpoint', endpoint: payload.endpoint, apiKey: payload.apiKey });
       setValue('endpointId', payload.endpoint.id);
+    });
+
+    addEvent('approvalMode', 'change', function () {
+      state.approvalMode = valueOf('approvalMode');
+      post({ type: 'setApprovalMode', approvalMode: state.approvalMode });
     });
 
     if (byId('summary')) {

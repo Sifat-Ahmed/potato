@@ -14,7 +14,7 @@ export class OrchestratorRuntime {
     private readonly llmClient: LlmClient,
     private readonly emit: (update: OrchestratorRunUpdate) => void,
     private readonly toolRunner: ToolRunner,
-    private readonly recordActions: (actions: PendingAction[]) => Promise<void>
+    private readonly handleActions: (actions: PendingAction[]) => Promise<string[]>
   ) {}
 
   async run(taskText: string, endpoints: EndpointConfig[], agents: AgentConfig[], abortSignal?: AbortSignal): Promise<void> {
@@ -202,12 +202,19 @@ export class OrchestratorRuntime {
       const toolResults = await Promise.all(toolCalls.map(call => this.toolRunner.run(call, agent)));
       const toolActions = toolResults.flatMap(result => result.actions ?? []);
       if (toolActions.length > 0) {
-        await this.recordActions(toolActions);
-        this.emit({
-          kind: 'action-proposal',
-          message: `${agent.name} queued ${toolActions.length} approval action(s) from local tools.`,
-          actions: toolActions
-        });
+        const actionResults = await this.handleActions(toolActions);
+        if (actionResults.length > 0) {
+          this.emit({
+            kind: 'tool-result',
+            message: actionResults.join('\n')
+          });
+        } else {
+          this.emit({
+            kind: 'action-proposal',
+            message: `${agent.name} queued ${toolActions.length} approval action(s) from local tools.`,
+            actions: toolActions
+          });
+        }
       }
       this.emit({
         kind: 'tool-result',
@@ -231,12 +238,19 @@ export class OrchestratorRuntime {
 
     const actions = extractPendingActions(result.text, agent);
     if (actions.length > 0) {
-      await this.recordActions(actions);
-      this.emit({
-        kind: 'action-proposal',
-        message: `${agent.name} proposed ${actions.length} action(s) for approval.`,
-        actions
-      });
+      const actionResults = await this.handleActions(actions);
+      if (actionResults.length > 0) {
+        this.emit({
+          kind: 'tool-result',
+          message: actionResults.join('\n')
+        });
+      } else {
+        this.emit({
+          kind: 'action-proposal',
+          message: `${agent.name} proposed ${actions.length} action(s) for approval.`,
+          actions
+        });
+      }
     }
 
     return result;

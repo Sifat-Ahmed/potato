@@ -95,6 +95,15 @@ Models that do not support native function calling can request local tools by re
 
 The extension executes read-only tools locally, returns results to the agent, and asks for the final response. Mutating tools queue approval actions instead of changing files directly.
 
+## Approval Modes
+
+Potato supports two approval modes through the `orchestrator.approvalMode` setting and the Permissions view:
+
+- `manual`: file edits, file deletes, and terminal commands are queued in Actions until approved.
+- `full-access`: file edits and deletes are applied immediately, and terminal commands are launched immediately in a VS Code terminal.
+
+Read-only tools run immediately in both modes. Full access is workspace-scoped when a workspace is open.
+
 Coding tool behavior:
 
 - `list_directory`, `list_files`, `read_file`, `read_files`, `search_workspace`, `get_diagnostics`, `web_search`, and `fetch_url` run immediately.
