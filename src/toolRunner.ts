@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
-import { AgentConfig, PendingAction, ToolCall, ToolResult } from './types';
+import { AgentConfig, ApprovalMode, PendingAction, ToolCall, ToolResult } from './types';
 import { createId } from './utils';
 
 const MAX_TOOL_BYTES = 12000;
 const MAX_EDIT_BYTES = 250000;
 
 export class ToolRunner {
+  constructor(private readonly approvalMode: ApprovalMode = 'manual') {}
+
   async run(call: ToolCall, sourceAgent?: AgentConfig): Promise<ToolResult> {
     try {
       switch (call.name) {
@@ -36,9 +38,9 @@ export class ToolRunner {
         case 'edit_file':
           return await this.queueTargetedFileEdit(call, sourceAgent);
         case 'write_file':
-          return this.queueFileWrite(call, sourceAgent);
+          return await this.queueFileWrite(call, sourceAgent);
         case 'delete_file':
-          return this.queueFileDelete(call, sourceAgent);
+          return await this.queueFileDelete(call, sourceAgent);
         case 'run_terminal_command':
           return this.queueTerminalCommand(call, sourceAgent);
       }
@@ -252,7 +254,7 @@ export class ToolRunner {
     );
   }
 
-  private queueFileWrite(call: ToolCall, sourceAgent?: AgentConfig): ToolResult {
+  private async queueFileWrite(call: ToolCall, sourceAgent?: AgentConfig): Promise<ToolResult> {
     if (!sourceAgent) {
       throw new Error('write_file requires an agent approval context.');
     }
@@ -276,14 +278,25 @@ export class ToolRunner {
     );
   }
 
-  private queueFileEditAction(
+  private async queueFileEditAction(
     toolName: ToolCall['name'],
     path: string,
     content: string,
     title: string,
     sourceAgent: AgentConfig,
     description?: string
-  ): ToolResult {
+  ): Promise<ToolResult> {
+    if (this.approvalMode === 'full-access') {
+      const uri = resolveWorkspaceUri(path);
+      await vscode.workspace.fs.createDirectory(resolveWorkspaceParentUri(path));
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf8'));
+      return {
+        name: toolName,
+        ok: true,
+        content: `Applied file edit: ${path}`
+      };
+    }
+
     const action: PendingAction = {
       id: createId('action'),
       kind: 'file-edit',
@@ -308,7 +321,7 @@ export class ToolRunner {
     };
   }
 
-  private queueFileDelete(call: ToolCall, sourceAgent?: AgentConfig): ToolResult {
+  private async queueFileDelete(call: ToolCall, sourceAgent?: AgentConfig): Promise<ToolResult> {
     if (!sourceAgent) {
       throw new Error('delete_file requires an agent approval context.');
     }
@@ -316,6 +329,16 @@ export class ToolRunner {
     const path = String(call.arguments.path ?? '').trim();
     if (!path) {
       throw new Error('delete_file requires a path.');
+    }
+
+    if (this.approvalMode === 'full-access') {
+      const uri = resolveWorkspaceUri(path);
+      await vscode.workspace.fs.delete(uri, { recursive: false, useTrash: true });
+      return {
+        name: call.name,
+        ok: true,
+        content: `Deleted ${path}.`
+      };
     }
 
     const action: PendingAction = {
@@ -350,6 +373,20 @@ export class ToolRunner {
     const cwd = optionalStringArg(call.arguments.cwd);
     if (!command) {
       throw new Error('run_terminal_command requires a command.');
+    }
+
+    if (this.approvalMode === 'full-access') {
+      const terminal = vscode.window.createTerminal({
+        name: 'Potato Agent',
+        cwd: cwd ? resolveWorkspaceUri(cwd).fsPath : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+      });
+      terminal.show();
+      terminal.sendText(command);
+      return {
+        name: call.name,
+        ok: true,
+        content: `Started terminal command: ${command}`
+      };
     }
 
     const action: PendingAction = {
@@ -389,6 +426,20 @@ export function resolveWorkspaceUri(relativePath: string): vscode.Uri {
   }
 
   return vscode.Uri.joinPath(folder.uri, normalized);
+}
+
+function resolveWorkspaceParentUri(relativePath: string): vscode.Uri {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) {
+    throw new Error('No workspace folder is open.');
+  }
+
+  const parts = relativePath.replace(/\\/g, '/').replace(/^\/+/, '').split('/').filter(Boolean);
+  if (parts.some(part => part === '..')) {
+    throw new Error('Workspace paths cannot contain .. segments.');
+  }
+
+  return parts.length > 1 ? vscode.Uri.joinPath(folder.uri, ...parts.slice(0, -1)) : folder.uri;
 }
 
 function numberArg(value: unknown, fallback: number): number {

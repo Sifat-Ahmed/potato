@@ -4,6 +4,8 @@ export type AuthMode = 'bearer' | 'api-key' | 'none';
 
 export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high';
 
+export type ApprovalMode = 'manual' | 'full-access';
+
 export interface EndpointConfig {
   id: string;
   name: string;
@@ -211,6 +213,7 @@ export interface PublicState {
   pendingActions: PendingAction[];
   runHistory: RunHistoryEntry[];
   conversations: ConversationSummary[];
+  approvalMode?: ApprovalMode;
   activeConversation?: ConversationRecord;
 }
 
@@ -225,6 +228,7 @@ export type WebviewToExtensionMessage =
   | { type: 'newConversation' }
   | { type: 'openConversation'; conversationId: string }
   | { type: 'deleteConversation'; conversationId: string }
+  | { type: 'setApprovalMode'; approvalMode: ApprovalMode }
   | { type: 'testEndpoint'; endpointId: string }
   | { type: 'saveAndTestEndpoint'; endpoint: Omit<EndpointConfig, 'createdAt' | 'updatedAt'>; apiKey?: string }
   | { type: 'loadEndpointKey'; endpointId: string }

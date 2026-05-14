@@ -64,6 +64,19 @@
           "minimum": 1,
           "maximum": 12,
           "description": "Maximum number of delegated agent calls to run at once."
+        },
+        "orchestrator.approvalMode": {
+          "type": "string",
+          "enum": [
+            "manual",
+            "full-access"
+          ],
+          "enumDescriptions": [
+            "Queue file edits, file deletes, and terminal commands for manual approval.",
+            "Apply file edits/deletes and run terminal commands immediately."
+          ],
+          "default": "manual",
+          "description": "Controls whether mutating agent tools require manual approval or run automatically."
         }
       }
     }

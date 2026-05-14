@@ -4,7 +4,7 @@ import { LlmClient, resolveEndpointUrl } from './llmClient';
 import { OrchestratorRuntime } from './orchestrator';
 import { OrchestratorStorage } from './storage';
 import { ToolRunner } from './toolRunner';
-import { ChatAttachment, ExtensionToWebviewMessage, OrchestratorRunUpdate, RunHistoryEntry, WebviewToExtensionMessage } from './types';
+import { ApprovalMode, ChatAttachment, ExtensionToWebviewMessage, OrchestratorRunUpdate, PendingAction, RunHistoryEntry, WebviewToExtensionMessage } from './types';
 import { asErrorMessage, createId } from './utils';
 import { renderWebviewHtml } from './webviewHtml';
 import { applyFileDelete, applyFileEdit, runApprovedTerminalCommand } from './workspaceActions';
@@ -61,7 +61,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
         this.storage.getPublicState(),
         this.conversationDatabase.getPublicState()
       ]);
-      this.post({ type: 'state', state: { ...state, ...conversations } });
+      this.post({ type: 'state', state: { ...state, ...conversations, approvalMode: getApprovalMode() } });
       this.post({ type: 'attachments', attachments: this.attachments });
     } catch (error) {
       const message = `Failed to load Potato local state: ${asErrorMessage(error)}`;
@@ -73,7 +73,8 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
           agents: [],
           pendingActions: [],
           runHistory: [],
-          conversations: []
+          conversations: [],
+          approvalMode: getApprovalMode()
         }
       });
       this.post({ type: 'attachments', attachments: this.attachments });
@@ -119,6 +120,17 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
         case 'deleteConversation':
           await this.conversationDatabase.deleteConversation(message.conversationId);
           await this.refresh();
+          break;
+        case 'setApprovalMode':
+          await setApprovalMode(message.approvalMode);
+          await this.refresh();
+          this.post({
+            type: 'notice',
+            level: message.approvalMode === 'full-access' ? 'warning' : 'info',
+            message: message.approvalMode === 'full-access'
+              ? 'Full permission enabled for this workspace.'
+              : 'Manual approval enabled.'
+          });
           break;
         case 'testEndpoint':
           await this.testEndpoint(message.endpointId);
@@ -211,6 +223,7 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
       const attachmentContext = createAttachmentContext(this.attachments);
       const userTask = trimmed || 'Use the attached files as the user input and respond with the most relevant help.';
       const input = `${userTask}\n\n${conversationContext}\n\n${attachmentContext}\n\n${workspaceContext}`;
+      const approvalMode = getApprovalMode();
       const runtime = new OrchestratorRuntime(
         new LlmClient(endpointId => this.storage.getApiKey(endpointId)),
         update => {
@@ -220,9 +233,14 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
             void this.refresh();
           }
         },
-        new ToolRunner(),
+        new ToolRunner(approvalMode),
         async actions => {
+          if (approvalMode === 'full-access') {
+            return await this.applyActionsImmediately(actions);
+          }
+
           await this.storage.addPendingActions(actions);
+          return [];
         }
       );
 
@@ -374,15 +392,27 @@ export class OrchestratorWebviewProvider implements vscode.WebviewViewProvider {
       throw new Error('Only pending actions can be applied.');
     }
 
-    const result = action.kind === 'file-edit'
-      ? await applyFileEdit(action)
-      : action.kind === 'file-delete'
-        ? await applyFileDelete(action)
-      : runApprovedTerminalCommand(action);
+    const result = await this.applyPendingAction(action);
 
     await this.storage.updatePendingAction(actionId, { status: 'applied', result });
     await this.refresh();
     this.post({ type: 'notice', level: 'info', message: result });
+  }
+
+  private async applyActionsImmediately(actions: PendingAction[]): Promise<string[]> {
+    const results: string[] = [];
+    for (const action of actions) {
+      results.push(await this.applyPendingAction(action));
+    }
+    return results;
+  }
+
+  private async applyPendingAction(action: PendingAction): Promise<string> {
+    return action.kind === 'file-edit'
+      ? await applyFileEdit(action)
+      : action.kind === 'file-delete'
+        ? await applyFileDelete(action)
+        : runApprovedTerminalCommand(action);
   }
 
   private async exportConfig(): Promise<void> {
@@ -443,6 +473,18 @@ function getNonce(): string {
     nonce += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return nonce;
+}
+
+function getApprovalMode(): ApprovalMode {
+  const value = vscode.workspace.getConfiguration('orchestrator').get<string>('approvalMode', 'manual');
+  return value === 'full-access' ? 'full-access' : 'manual';
+}
+
+async function setApprovalMode(approvalMode: ApprovalMode): Promise<void> {
+  const target = vscode.workspace.workspaceFolders?.length
+    ? vscode.ConfigurationTarget.Workspace
+    : vscode.ConfigurationTarget.Global;
+  await vscode.workspace.getConfiguration('orchestrator').update('approvalMode', approvalMode, target);
 }
 
 function createAttachmentContext(attachments: ChatAttachment[]): string {

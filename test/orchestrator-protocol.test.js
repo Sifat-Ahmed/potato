@@ -7,6 +7,7 @@ const { extractPendingActions, extractToolCalls } = require('../out/actionParser
 const { createEffectiveAgentConfig, createResponsesRequestBody, resolveEndpointUrl } = require('../out/llmClient');
 const { parseJsonObject } = require('../out/utils');
 const { renderWebviewHtml } = require('../out/webviewHtml');
+const packageJson = require('../package.json');
 
 const agent = {
   id: 'agent_1',
@@ -229,10 +230,18 @@ test('rendered webview includes required interactive controls', () => {
     'agentForm',
     'endpointForm',
     'testEndpoint',
-    'toggleEndpointApiKey'
+    'toggleEndpointApiKey',
+    'approvalMode'
   ];
 
   for (const id of requiredIds) {
     assert.match(html, new RegExp('id="' + id + '"'));
   }
+});
+
+test('approval mode configuration exposes manual and full access choices', () => {
+  const config = packageJson.contributes.configuration.properties['orchestrator.approvalMode'];
+
+  assert.deepEqual(config.enum, ['manual', 'full-access']);
+  assert.equal(config.default, 'manual');
 });

@@ -306,6 +306,7 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
             <button class="menu-item" data-tab="agents"><span class="codicon codicon-organization"></span>Agents</button>
             <button class="menu-item" data-tab="endpoints"><span class="codicon codicon-plug"></span>Endpoints</button>
             <button class="menu-item" data-tab="actions"><span class="codicon codicon-checklist"></span>Actions<span class="count" id="actionCount">0</span></button>
+            <button class="menu-item" data-tab="settings"><span class="codicon codicon-shield"></span>Permissions</button>
             <div class="menu-separator"></div>
             <button class="menu-item" id="importConfig"><span class="codicon codicon-cloud-download"></span>Import config</button>
             <button class="menu-item" id="exportConfig"><span class="codicon codicon-cloud-upload"></span>Export config</button>
@@ -398,6 +399,20 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
         <div class="actions" id="actionList"></div>
       </section>
 
+      <section class="section" id="settings">
+        <div><div class="item-title">Permissions</div><div class="hint">Controls how Potato handles mutating agent tools.</div></div>
+        <div class="stack item">
+          <div class="field">
+            <label for="approvalMode">Approval mode</label>
+            <select id="approvalMode">
+              <option value="manual">Manual approval</option>
+              <option value="full-access">Full permission</option>
+            </select>
+            <div class="hint">Manual approval queues edits, deletes, and terminal commands. Full permission applies them immediately for this workspace.</div>
+          </div>
+        </div>
+      </section>
+
       <section class="section" id="history">
         <div class="row split">
           <div><div class="item-title">Conversation History</div><div class="hint">Conversations are stored locally.</div></div>
@@ -415,7 +430,7 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
   <script nonce="${nonce}">
     const vscode = window.__potatoVsCode || acquireVsCodeApi();
     window.__potatoVsCode = vscode;
-    const state = { endpoints: [], agents: [], pendingActions: [], runHistory: [], conversations: [], activeConversation: undefined, attachments: [], activeTab: 'chat', running: false, streamNode: null, thinkingNode: null };
+    const state = { endpoints: [], agents: [], pendingActions: [], runHistory: [], conversations: [], activeConversation: undefined, attachments: [], approvalMode: 'manual', activeTab: 'chat', running: false, streamNode: null, thinkingNode: null };
     const missingElementIds = new Set();
     const missingElement = {
       hidden: true,
@@ -462,6 +477,7 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
           state.pendingActions = message.state.pendingActions || [];
           state.runHistory = message.state.runHistory || [];
           state.conversations = message.state.conversations || [];
+          state.approvalMode = message.state.approvalMode || 'manual';
           state.activeConversation = message.state.activeConversation;
           renderAll();
         }
@@ -548,6 +564,10 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
           $('endpointId').value = payload.endpoint.id;
         });
         $('toggleEndpointApiKey').addEventListener('click', () => toggleEndpointApiKey());
+        $('approvalMode').addEventListener('change', () => {
+          state.approvalMode = $('approvalMode').value;
+          vscode.postMessage({ type: 'setApprovalMode', approvalMode: state.approvalMode });
+        });
         $('deleteAgent').addEventListener('click', () => {
           const agentId = $('agentId').value;
           if (agentId) vscode.postMessage({ type: 'deleteAgent', agentId });
@@ -618,7 +638,7 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
       state.activeTab = tab;
       document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
       $('historyButton').classList.toggle('active', tab === 'history');
-      $('menuButton').classList.toggle('active', ['agents', 'endpoints', 'actions'].includes(tab));
+      $('menuButton').classList.toggle('active', ['agents', 'endpoints', 'actions', 'settings'].includes(tab));
       document.querySelectorAll('.section').forEach(section => section.classList.toggle('active', section.id === tab));
     }
 
@@ -637,6 +657,7 @@ export function renderWebviewHtml(codiconsUri: string, fallbackScriptUri: string
     function renderAll() {
       $('summary').textContent = state.endpoints.length + ' endpoint' + (state.endpoints.length === 1 ? '' : 's') + ', ' + state.agents.length + ' agent' + (state.agents.length === 1 ? '' : 's') + ', ' + state.conversations.length + ' chat' + (state.conversations.length === 1 ? '' : 's') + ', ' + pendingCount() + ' pending';
       $('actionCount').textContent = String(pendingCount());
+      $('approvalMode').value = state.approvalMode;
       renderEndpointOptions();
       renderAgents();
       renderEndpoints();
